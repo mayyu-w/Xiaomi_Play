@@ -1,0 +1,23 @@
+xiaomi:
+  enabled: true
+  api:
+    base-url: https://account.xiaomi.com
+    io-url: https://api.io.mi.com/app
+    na-url: https://api.ai.mi.com
+    na-url2: https://api2.mina.mi.com
+  crypto:
+    aes-key: ${XIAOMI_AES_KEY:}
+  http:
+    connect-timeout: 10000
+    read-timeout: 30000
+    max-retries: 3
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/xiaomi_sdk
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+  data:
+    redis:
+      host: localhost
+      port: 6379

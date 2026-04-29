@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where lark *)",
+      "Bash(lark --version)",
+      "Bash(npx lark-cli *)",
+      "Bash(npx --yes @anthropic-ai/lark-cli --version)",
+      "Bash(lark doc *)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(curl -s \"https://api.github.com/repos/Yonsm/MiService/contents/miservice\")",
+      "Bash(curl *)",
+      "mcp__github__get_file_contents",
+      "mcp__github__search_repositories",
+      "mcp__github__search_code",
+      "Bash(mvn compile *)",
+      "Bash(mvn test *)",
+      "Bash(mvn dependency:resolve -q)",
+      "Bash(mvn dependency:tree)",
+      "Bash(jar tf *)",
+      "Bash(mvn dependency:resolve -DincludeGroupIds=com.squareup.okhttp3 -q)",
+      "Bash(grep \"\\\\.class$\")",
+      "Bash(javap -p -cp \"/e/MavenRepository/com/squareup/okhttp3/mockwebserver3/5.3.2/mockwebserver3-5.3.2.jar;/e/MavenRepository/com/squareup/okhttp3/okhttp-jvm/5.3.2/okhttp-jvm-5.3.2.jar\" mockwebserver3.RecordedRequest)",
+      "Bash(java -cp \"/e/MavenRepository/com/squareup/okhttp3/mockwebserver3/5.3.2/mockwebserver3-5.3.2.jar\" --describe-module mockwebserver3)",
+      "Bash(jar xf *)",
+      "Read(//tmp/mockwebserver3/**)",
+      "Bash(mvn clean *)",
+      "Bash(git add *)",
+      "Bash(rm -rf mockwebserver3)",
+      "Bash(git reset *)",
+      "Bash(rm -f mockwebserver3/RecordedRequest.kt)",
+      "Bash(rmdir mockwebserver3 *)"
+    ]
+  }
+}
