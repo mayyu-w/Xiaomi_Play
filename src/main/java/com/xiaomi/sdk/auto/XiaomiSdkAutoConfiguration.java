@@ -125,8 +125,9 @@ public class XiaomiSdkAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public PlayerStatusScheduler playerStatusScheduler(MiNAService minaService,
+                                                        MiAccountService accountService,
                                                         ObjectMapper objectMapper) {
-        return new PlayerStatusScheduler(minaService, objectMapper);
+        return new PlayerStatusScheduler(minaService, accountService, objectMapper);
     }
 
     @Bean

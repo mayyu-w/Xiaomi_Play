@@ -28,7 +28,7 @@ public class TokenRefreshScheduler {
         this.tokenManager = tokenManager;
     }
 
-    @Scheduled(initialDelay = 30_000, fixedRate = 3_600_000)
+    @Scheduled(initialDelay = 30_000, fixedRate = 1_800_000)
     public void refreshIfNeeded() {
         try {
             LoginResult token = tokenManager.loadActiveToken();

@@ -30,7 +30,7 @@ public class TokenManager {
     private static final String REDIS_ACTIVE_USER = "xm:active_user";
     private static final String REDIS_TOKEN_PREFIX = "xm:token:";
     static final long REFRESH_BUFFER_MS = 5 * 60 * 1000;
-    static final long PROACTIVE_REFRESH_MS = 24 * 60 * 60 * 1000;
+    static final long PROACTIVE_REFRESH_MS = 13 * 60 * 60 * 1000;
 
     /** 后台线程审计上下文（用于无 HTTP 请求时传递 IP/UA） */
     private static final ThreadLocal<String[]> auditContext = new ThreadLocal<>();

@@ -2,6 +2,7 @@ package com.xiaomi.sdk.music;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xiaomi.sdk.account.MiAccountService;
 import com.xiaomi.sdk.exception.XiaomiApiException;
 import com.xiaomi.sdk.exception.XiaomiAuthException;
 import com.xiaomi.sdk.model.PlayerStatus;
@@ -31,6 +32,7 @@ public class PlayerStatusScheduler {
     private static final Logger log = LoggerFactory.getLogger(PlayerStatusScheduler.class);
 
     private final MiNAService minaService;
+    private final MiAccountService accountService;
     private final ObjectMapper objectMapper;
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
@@ -44,8 +46,9 @@ public class PlayerStatusScheduler {
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public PlayerStatusScheduler(MiNAService minaService, ObjectMapper objectMapper) {
+    public PlayerStatusScheduler(MiNAService minaService, MiAccountService accountService, ObjectMapper objectMapper) {
         this.minaService = minaService;
+        this.accountService = accountService;
         this.objectMapper = objectMapper;
     }
 
@@ -184,19 +187,28 @@ public class PlayerStatusScheduler {
                 }
             }
         } catch (XiaomiAuthException e) {
-            tokenExpired = true;
-            log.warn("Token 已过期，定时任务已暂停");
-            stop();
+            handleTokenExpired();
         } catch (XiaomiApiException e) {
             if (e.getHttpStatus() == 401) {
-                tokenExpired = true;
-                log.warn("Token 已过期，定时任务已暂停");
-                stop();
+                handleTokenExpired();
             } else {
                 log.warn("定时获取播放状态失败: {}", e.getMessage());
             }
         } catch (Exception e) {
             log.warn("定时获取播放状态失败: {}", e.getMessage());
+        }
+    }
+
+    private void handleTokenExpired() {
+        log.warn("检测到 401，尝试自动刷新 Token");
+        try {
+            accountService.refreshToken();
+            tokenExpired = false;
+            log.info("Token 自动刷新成功，恢复轮询");
+        } catch (Exception ex) {
+            tokenExpired = true;
+            log.error("Token 自动刷新失败，定时任务已暂停: {}", ex.getMessage());
+            stop();
         }
     }
 

@@ -548,6 +548,8 @@ const ControlPage = {
             playStartTime: 0,
             pendingNewSong: false,
             sseSource: null,
+            // 歌曲结束定时器（主策略：提前发新URL）
+            songEndTimer: null,
             // 保护锁：用户手动操作后短时间内不让定时刷新覆盖
             volumeLockUntil: 0,
             // 倒计时进度圈
@@ -571,6 +573,7 @@ const ControlPage = {
         },
         async handlePause() {
             this.manualPause = true;
+            this.clearSongEndTimer();
             this.musicLoading = true;
             try {
                 const res = await api.music.pause(this.getDeviceId());
@@ -613,6 +616,7 @@ const ControlPage = {
         async playFile(file, direct = false) {
             this.musicLoading = true;
             this.manualPause = false;
+            this.clearSongEndTimer();
             this.progressActive = true;
             this.playStartTime = Date.now();
             this.pendingNewSong = true;
@@ -699,9 +703,9 @@ const ControlPage = {
                 return;
             }
 
-            // 新歌等待后端确认（status=1 且 duration>0）
+            // 新歌等待后端确认（status=1 且 duration>0 且 position<5s）
             if (this.pendingNewSong) {
-                if (newStatus === 1 && newDuration > 0) {
+                if (newStatus === 1 && newDuration > 0 && newPlayTime < 5) {
                     this.pendingNewSong = false;
                     this.statusBasePlayTime = newPlayTime;
                     this.statusBaseTimestamp = now;
@@ -709,19 +713,29 @@ const ControlPage = {
                     this.displayDuration = newDuration;
                     this.syncProgressPercent();
                     this.prevPlayStatus = newStatus;
+                    this.setSongEndTimer(newDuration - newPlayTime);
                 }
                 this.resetCountdown();
                 return;
             }
-            // 回跳检测：设备已自动循环（position 从接近结尾跳回接近0）
+            // 回跳兜底：设备已自动循环（position 从接近结尾跳回接近0）
             if (!this.manualPause && !this.autoPlaying
                 && this.selectedFile && newDuration > 0
                 && this.statusBasePlayTime > newDuration * 0.8
                 && newPlayTime < this.statusBasePlayTime - 5) {
+                this.clearSongEndTimer();
                 this.progressActive = false;
                 this.handleSongEnd();
                 this.resetCountdown();
                 return;
+            }
+            // 暂停时清除定时器
+            if (newStatus === 2 && this.prevPlayStatus === 1) {
+                this.clearSongEndTimer();
+            }
+            // 恢复播放时重建定时器
+            if (newStatus === 1 && this.prevPlayStatus === 2 && newDuration > 0) {
+                this.setSongEndTimer(newDuration - newPlayTime);
             }
             // 正常更新跟踪基准
             this.statusBasePlayTime = newPlayTime;
@@ -742,6 +756,7 @@ const ControlPage = {
             } catch {}
         },
         async handleSongEnd() {
+            this.clearSongEndTimer();
             this.autoPlaying = true;
             const idx = this.fileList.findIndex(f => f.path === this.selectedFile);
             if (idx < 0 || this.fileList.length === 0) { this.autoPlaying = false; return; }
@@ -935,6 +950,28 @@ const ControlPage = {
             } catch { this.$message.error('网络错误'); }
             this.showPlayMode = false;
         },
+        // ---- 歌曲结束定时器 ----
+        setSongEndTimer(remainingSec) {
+            this.clearSongEndTimer();
+            if (!this.progressActive || this.manualPause || !this.selectedFile) return;
+            const buffer = 1.5; // 提前1.5秒发新URL（设备切换延迟约1.6秒）
+            const delay = Math.max(0, (remainingSec - buffer) * 1000);
+            if (delay > 0) {
+                this.songEndTimer = setTimeout(() => {
+                    this.songEndTimer = null;
+                    if (this.progressActive && !this.manualPause && !this.autoPlaying) {
+                        this.progressActive = false;
+                        this.handleSongEnd();
+                    }
+                }, delay);
+            }
+        },
+        clearSongEndTimer() {
+            if (this.songEndTimer) {
+                clearTimeout(this.songEndTimer);
+                this.songEndTimer = null;
+            }
+        },
         resetCountdown() {
             this.stopCountdown();
             this.countdownStart = performance.now();
@@ -996,6 +1033,7 @@ const ControlPage = {
         this.loadFolderConfig();
     },
     beforeUnmount() {
+        this.clearSongEndTimer();
         this.stopSSE();
         this.stopCountdown();
         this.stopProgressTimer();

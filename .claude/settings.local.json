@@ -60,7 +60,8 @@
       "Bash(taskkill //F //PID 53728)",
       "Bash(tasklist)",
       "Bash(taskkill *)",
-      "Bash(printenv)"
+      "Bash(printenv)",
+      "Bash(git commit -m 'feat: SSE推送 + 动态轮询间隔 + 快速切歌 + 单记录状态表 *)"
     ]
   }
 }
