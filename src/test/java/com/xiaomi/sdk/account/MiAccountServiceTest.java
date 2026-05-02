@@ -6,6 +6,7 @@ import com.xiaomi.sdk.crypto.CryptoService;
 import com.xiaomi.sdk.exception.XiaomiAuthException;
 import com.xiaomi.sdk.http.OkHttpClientFactory;
 import com.xiaomi.sdk.model.LoginResult;
+import com.xiaomi.sdk.token.StubTokenManager;
 import mockwebserver3.MockResponse;
 import mockwebserver3.MockWebServer;
 import mockwebserver3.RecordedRequest;
@@ -40,7 +41,8 @@ class MiAccountServiceTest {
                         baseUrl + "na2"
                 ),
                 new XiaomiSdkProperties.Crypto(),
-                new XiaomiSdkProperties.Http()
+                new XiaomiSdkProperties.Http(),
+                new XiaomiSdkProperties.Folder()
         );
 
         OkHttpClientFactory factory = new OkHttpClientFactory();
@@ -48,7 +50,8 @@ class MiAccountServiceTest {
                 factory.create(properties),
                 new ObjectMapper(),
                 new CryptoService(),
-                properties
+                properties,
+                new StubTokenManager()
         );
     }
 
@@ -60,7 +63,7 @@ class MiAccountServiceTest {
     @Test
     @DisplayName("登录成功应返回 LoginResult")
     void loginShouldReturnLoginResult() throws Exception {
-        // Step 1: serviceLogin 返回 code != 0，需要密码登录
+        // Step 1: serviceLogin(micoapi) 返回 code != 0，需要密码登录
         mockWebServer.enqueue(new MockResponse.Builder()
                 .body("&&&START&&&{\"code\":1,\"qs\":\"qs_value\",\"sid\":\"micoapi\"," +
                         "\"_sign\":\"sign_value\",\"callback\":\"callback_value\"}")
@@ -70,12 +73,23 @@ class MiAccountServiceTest {
         mockWebServer.enqueue(new MockResponse.Builder()
                 .body("&&&START&&&{\"code\":0,\"userId\":\"12345\"," +
                         "\"passToken\":\"pt_value\",\"ssecurity\":\"c2VjdXJpdHk=\",\"nonce\":\"bm9uY2U=\"," +
-                        "\"location\":\"" + mockWebServer.url("security_token") + "\"}")
+                        "\"location\":\"" + mockWebServer.url("security_token_micoapi") + "\"}")
                 .build());
 
-        // Step 3: securityTokenService 返回 serviceToken cookie
+        // Step 3: fetchServiceToken(micoapi) 返回 serviceToken cookie
         mockWebServer.enqueue(new MockResponse.Builder()
-                .addHeader("Set-Cookie", "serviceToken=st_value; path=/")
+                .addHeader("Set-Cookie", "serviceToken=st_micoapi; path=/")
+                .build());
+
+        // Step 4: serviceLogin(xiaomiio) 使用 passToken 直接返回 location
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .body("&&&START&&&{\"code\":0,\"nonce\":\"aW9ub25jZQ==\"," +
+                        "\"location\":\"" + mockWebServer.url("security_token_xiaomiio") + "\"}")
+                .build());
+
+        // Step 5: fetchServiceToken(xiaomiio) 返回 xiaomiio 的 serviceToken
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .addHeader("Set-Cookie", "serviceToken=st_xiaomiio; path=/")
                 .build());
 
         LoginResult result = accountService.login("user@test.com", "password123");
@@ -83,7 +97,8 @@ class MiAccountServiceTest {
         assertNotNull(result);
         assertEquals("12345", result.userId());
         assertEquals("pt_value", result.passToken());
-        assertEquals("st_value", result.serviceToken());
+        assertEquals("st_micoapi", result.serviceToken());
+        assertEquals("st_xiaomiio", result.ioServiceToken());
 
         // 验证请求路径
         RecordedRequest req1 = mockWebServer.takeRequest();
@@ -93,8 +108,13 @@ class MiAccountServiceTest {
         assertTrue(req2.getRequestLine().contains("serviceLoginAuth2"));
 
         RecordedRequest req3 = mockWebServer.takeRequest();
-        assertTrue(req3.getRequestLine().contains("security_token"));
-        assertTrue(req3.getRequestLine().contains("clientSign="));
+        assertTrue(req3.getRequestLine().contains("security_token_micoapi"));
+
+        RecordedRequest req4 = mockWebServer.takeRequest();
+        assertTrue(req4.getRequestLine().contains("serviceLogin"));
+
+        RecordedRequest req5 = mockWebServer.takeRequest();
+        assertTrue(req5.getRequestLine().contains("security_token_xiaomiio"));
     }
 
     @Test

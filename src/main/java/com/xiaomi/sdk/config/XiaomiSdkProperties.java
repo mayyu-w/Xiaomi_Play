@@ -11,11 +11,11 @@ public record XiaomiSdkProperties(
     boolean enabled,
     Api api,
     Crypto crypto,
-    Http http
-) {
+    Http http,
+    Folder folder) {
 
     public XiaomiSdkProperties() {
-        this(true, new Api(), new Crypto(), new Http());
+        this(true, new Api(), new Crypto(), new Http(), new Folder());
     }
 
     public record Api(
@@ -49,6 +49,18 @@ public record XiaomiSdkProperties(
     ) {
         public Http() {
             this(10000, 30000, 3);
+        }
+    }
+
+    public record Folder(
+        String path,
+        boolean watchEnabled,
+        int watchInterval,
+        String ignoreDirs,
+        int maxDepth
+    ) {
+        public Folder() {
+            this(null, false, 300, "", 3);
         }
     }
 }

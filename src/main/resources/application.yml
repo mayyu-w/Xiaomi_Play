@@ -6,18 +6,51 @@ xiaomi:
     na-url: https://api.ai.mi.com
     na-url2: https://api2.mina.mi.com
   crypto:
+    # AES-256 密钥，必须恰好 32 字节（ASCII 字符），建议随机生成
+    # 示例生成命令: head -c 32 /dev/urandom | base64 | head -c 32
+    # 未配置时敏感字段将明文存储（仅限开发环境）
     aes-key: ${XIAOMI_AES_KEY:}
   http:
     connect-timeout: 10000
     read-timeout: 30000
     max-retries: 3
+  folder:
+    # 音频文件夹根路径，Docker 部署时通过 -e MUSIC_PATH=/music 指定
+    path: ${MUSIC_PATH:}
+    # 文件监控开关，开启后定时扫描文件夹变化
+    watch-enabled: ${FOLDER_WATCH_ENABLED:false}
+    # 监控间隔（秒）
+    watch-interval: ${FOLDER_WATCH_INTERVAL:10}
+    # 忽略的目录名，多个用逗号分隔
+    ignore-dirs: ${FOLDER_IGNORE_DIRS:tmp,cache}
+    # 目录扫描深度
+    max-depth: ${FOLDER_MAX_DEPTH:10}
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/xiaomi_sdk
+    url: jdbc:postgresql://localhost:5432/xiaomi_play?TimeZone=Asia/Shanghai
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
   data:
     redis:
       host: localhost
       port: 6379
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: "0"
+  web:
+    resources:
+      cache:
+        period: 0
+      chain:
+        cache: false
+
+mybatis-flex:
+  logger:
+    enabled: false
+
+#logging:
+#  level:
+#    com.xiaomi.sdk.mapper: debug

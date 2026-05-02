@@ -10,6 +10,6 @@ public record LoginResult(
     String ssecurity,
     String serviceToken,
     long serviceTokenExpire,
-    String apiToken,
-    long apiTokenExpire
+    String ioServiceToken,
+    long ioServiceTokenExpire
 ) {}

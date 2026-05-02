@@ -1,6 +1,11 @@
 package com.xiaomi.sdk.crypto;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.crypto.Cipher;
 import javax.crypto.Mac;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -16,7 +21,100 @@ import java.util.StringJoiner;
  */
 public class CryptoService {
 
+    private static final Logger log = LoggerFactory.getLogger(CryptoService.class);
+
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String AES_ALGORITHM = "AES/GCM/NoPadding";
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int GCM_TAG_LENGTH = 128;
+
+    private final byte[] aesKey;
+
+    /**
+     * 无 AES 密钥构造（仅签名/摘要功能）
+     */
+    public CryptoService() {
+        this.aesKey = null;
+    }
+
+    /**
+     * 带 AES-256 密钥构造
+     * @param aesKey 恰好 32 字节（256 位）的密钥字符串
+     */
+    public CryptoService(String aesKey) {
+        if (aesKey == null || aesKey.isBlank()) {
+            this.aesKey = null;
+            return;
+        }
+        byte[] keyBytes = aesKey.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length != 32) {
+            throw new IllegalArgumentException(
+                    "AES-256 密钥必须恰好 32 字节，当前: " + keyBytes.length + " 字节");
+        }
+        this.aesKey = keyBytes;
+    }
+
+    /**
+     * AES-256-GCM 加密，返回 Base64(IV + 密文 + Tag)
+     */
+    public String encrypt(String plaintext) {
+        if (aesKey == null) {
+            throw new IllegalStateException("AES 密钥未配置，无法加密");
+        }
+        try {
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            RANDOM.nextBytes(iv);
+
+            Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
+            cipher.init(Cipher.ENCRYPT_MODE,
+                    new SecretKeySpec(aesKey, "AES"),
+                    new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+
+            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+
+            ByteBuffer buffer = ByteBuffer.allocate(iv.length + ciphertext.length);
+            buffer.put(iv);
+            buffer.put(ciphertext);
+            return Base64.getEncoder().encodeToString(buffer.array());
+        } catch (Exception e) {
+            throw new RuntimeException("AES 加密失败", e);
+        }
+    }
+
+    /**
+     * AES-256-GCM 解密，输入为 Base64(IV + 密文 + Tag)
+     */
+    public String decrypt(String ciphertext) {
+        if (aesKey == null) {
+            throw new IllegalStateException("AES 密钥未配置，无法解密");
+        }
+        try {
+            byte[] data = Base64.getDecoder().decode(ciphertext);
+            ByteBuffer buffer = ByteBuffer.wrap(data);
+
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            buffer.get(iv);
+            byte[] encrypted = new byte[buffer.remaining()];
+            buffer.get(encrypted);
+
+            Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
+            cipher.init(Cipher.DECRYPT_MODE,
+                    new SecretKeySpec(aesKey, "AES"),
+                    new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+
+            byte[] plainBytes = cipher.doFinal(encrypted);
+            return new String(plainBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("AES 解密失败", e);
+        }
+    }
+
+    /**
+     * 是否已配置 AES 密钥
+     */
+    public boolean hasAesKey() {
+        return aesKey != null;
+    }
 
     /**
      * MD5 哈希，返回大写十六进制字符串
@@ -88,6 +186,13 @@ public class CryptoService {
                 .add("data=" + data)
                 .toString();
         byte[] sign = hmacSha256(base64Decode(snonce), msg.getBytes(StandardCharsets.UTF_8));
+        log.debug("signData uri={}, ssecurity={}..., nonce={}, snonce={}..., dataLen={}, msgLen={}",
+                uri,
+                ssecurity != null ? ssecurity.substring(0, Math.min(8, ssecurity.length())) : "null",
+                nonce,
+                snonce.substring(0, Math.min(8, snonce.length())),
+                data.length(),
+                msg.length());
         return Map.of(
                 "_nonce", nonce,
                 "data", data,

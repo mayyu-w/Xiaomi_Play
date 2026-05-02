@@ -1,0 +1,49 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - generic [ref=e11]: 小米账号
+    - navigation [ref=e12]:
+      - link "用户协议" [ref=e13] [cursor=pointer]:
+        - /url: javascript:void(0)
+      - link "隐私政策" [ref=e14] [cursor=pointer]:
+        - /url: javascript:void(0)
+      - link "帮助中心" [ref=e15] [cursor=pointer]:
+        - /url: javascript:void(0)
+  - generic [ref=e17]:
+    - button "扫码登录" [ref=e18] [cursor=pointer]:
+      - img [ref=e19]
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - button "登录" [ref=e23] [cursor=pointer]
+        - button "注册" [ref=e24] [cursor=pointer]
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - textbox [ref=e27]:
+            - /placeholder: " "
+          - generic: 邮箱/手机号码/小米ID
+        - generic [ref=e28]:
+          - textbox [ref=e29]:
+            - /placeholder: " "
+          - generic: 密码
+          - button "显示" [ref=e30] [cursor=pointer]
+        - generic [ref=e31] [cursor=pointer]:
+          - checkbox "已阅读并同意小米账号使用协议和小米账号隐私政策" [ref=e32]
+          - generic [ref=e33]:
+            - text: 已阅读并同意
+            - link "小米账号使用协议" [ref=e34]:
+              - /url: javascript:void(0)
+            - text: 和
+            - link "小米账号隐私政策" [ref=e35]:
+              - /url: javascript:void(0)
+        - button "登录" [disabled] [ref=e36]
+      - generic [ref=e37]:
+        - link "忘记密码？" [ref=e38] [cursor=pointer]:
+          - /url: javascript:void(0)
+        - link "手机号登录" [ref=e39] [cursor=pointer]:
+          - /url: javascript:void(0)
+  - contentinfo [ref=e40]:
+    - text: 小米公司版权所有-京ICP备10046444-
+    - link "京公网安备11010802020134号" [ref=e41] [cursor=pointer]:
+      - /url: javascript:void(0)
+    - text: "-京ICP证110507号"

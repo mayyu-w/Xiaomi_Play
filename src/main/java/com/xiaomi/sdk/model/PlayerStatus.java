@@ -10,5 +10,6 @@ public record PlayerStatus(
     String mediaType,
     String mediaId,
     long playTime,
-    long duration
+    long duration,
+    int loopType
 ) {}

@@ -1,6 +1,5 @@
 package com.xiaomi.sdk.miot;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xiaomi.sdk.account.MiAccountService;
@@ -11,10 +10,12 @@ import com.xiaomi.sdk.http.OkHttpClientFactory;
 import com.xiaomi.sdk.model.Device;
 import com.xiaomi.sdk.model.MiIOResponse;
 import com.xiaomi.sdk.model.PropertyValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import okhttp3.*;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+
 import java.util.*;
 
 /**
@@ -24,6 +25,7 @@ import java.util.*;
  */
 public class MiIOService {
 
+    private static final Logger log = LoggerFactory.getLogger(MiIOService.class);
     private static final String SID = "xiaomiio";
 
     private final OkHttpClient httpClient;
@@ -83,7 +85,7 @@ public class MiIOService {
     /**
      * 执行设备动作
      */
-    public MiIOResponse executeAction(String did, int siid, int aiid, Map<String, Object> args) {
+    public MiIOResponse executeAction(String did, int siid, int aiid, List<Object> args) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("did", did);
         params.put("siid", siid);
@@ -130,15 +132,21 @@ public class MiIOService {
         ensureLoggedIn();
         try {
             String jsonData = objectMapper.writeValueAsString(data);
-            String ssecurity = accountService.getCurrentToken().ssecurity();
+            String ssecurity = accountService.getSsecurityForMiot();
             Map<String, String> signedData = crypto.signData(uri, jsonData, ssecurity);
 
             String url = properties.api().ioUrl() + uri;
 
-            RequestBody body = RequestBody.create(
-                    objectMapper.writeValueAsString(signedData),
-                    MediaType.get("application/json; charset=utf-8")
-            );
+            log.info("MIoT签名 uri={}, ssecurity={}..., nonce={}, data={}",
+                    uri,
+                    ssecurity != null && ssecurity.length() > 8 ? ssecurity.substring(0, 8) + "..." : ssecurity,
+                    signedData.get("_nonce"),
+                    jsonData);
+            RequestBody body = new FormBody.Builder()
+                    .add("_nonce", signedData.get("_nonce"))
+                    .add("data", signedData.get("data"))
+                    .add("signature", signedData.get("signature"))
+                    .build();
 
             Request request = new Request.Builder()
                     .url(url)
@@ -146,11 +154,13 @@ public class MiIOService {
                     .header("User-Agent", OkHttpClientFactory.getUserAgentMio())
                     .header("x-xiaomi-protocal-flag-cli", "PROTOCAL-HTTP2")
                     .header("Cookie", accountService.buildCookieString(SID) +
-                            "; PassportDeviceId=" + accountService.getCurrentToken().userId())
+                            "; PassportDeviceId=" + accountService.getDeviceId())
                     .build();
 
             try (Response response = httpClient.newCall(request).execute()) {
                 String responseBody = response.body() != null ? response.body().string() : "{}";
+                log.info("MIoT响应 {} status={} body={}", uri, response.code(),
+                        responseBody.length() > 500 ? responseBody.substring(0, 500) + "..." : responseBody);
                 JsonNode json = objectMapper.readTree(responseBody);
 
                 if (json.has("code")) {
