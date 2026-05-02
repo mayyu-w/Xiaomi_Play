@@ -9,6 +9,7 @@ const api = {
     },
     get(url) { return this.request(url); },
     post(url, data) { return this.request(url, { method: 'POST', body: JSON.stringify(data) }); },
+    put(url, data) { return this.request(url, { method: 'PUT', body: JSON.stringify(data) }); },
 
     auth: {
         login: (username, password) => api.post('/api/auth/login', { username, password }),
@@ -28,6 +29,7 @@ const api = {
         prev: (deviceId) => api.post('/api/music/prev', { deviceId }),
         volume: (deviceId, volume) => api.post('/api/music/volume', { deviceId, volume }),
         mode: (deviceId, mode) => api.post('/api/music/mode', { deviceId, mode }),
+        disableAutoPlay: () => api.post('/api/music/autoplay/disable'),
         status: (deviceId, did, force) => api.get('/api/music/status?deviceId=' + encodeURIComponent(deviceId) + '&did=' + encodeURIComponent(did) + (force ? '&force=true' : '')),
         statusStream: (deviceId) => '/api/music/status/stream?deviceId=' + encodeURIComponent(deviceId),
         setInterval: (deviceId, interval) => api.post('/api/music/status/interval', { deviceId, interval }),
@@ -54,6 +56,17 @@ const api = {
         addKeyword: (keyword, command) => api.post('/api/voice/keywords', { keyword, command, enabled: true, sortOrder: 0 }),
         updateKeyword: (id, keyword, command, enabled) => api.put('/api/voice/keywords/' + id, { keyword, command, enabled }),
         deleteKeyword: (id) => api.request('/api/voice/keywords/' + id, { method: 'DELETE' }),
+    },
+    schedule: {
+        commands: () => api.get('/api/schedule/commands'),
+        playModes: () => api.get('/api/schedule/play-modes'),
+        tasks: () => api.get('/api/schedule/tasks'),
+        addTask: (data) => api.post('/api/schedule/tasks', data),
+        updateTask: (id, data) => api.put('/api/schedule/tasks/' + id, data),
+        deleteTask: (id) => api.request('/api/schedule/tasks/' + id, { method: 'DELETE' }),
+        validateCron: (expr) => api.get('/api/schedule/cron/validate?expr=' + encodeURIComponent(expr)),
+        logs: (taskId, limit = 50) => api.get('/api/schedule/logs?limit=' + limit + (taskId ? '&taskId=' + taskId : '')),
+        clearLogs: () => api.request('/api/schedule/logs', { method: 'DELETE' }),
     },
 };
 
@@ -267,6 +280,7 @@ const DevicesPage = {
             <div class="devices-header">
                 <h2>我的设备</h2>
                 <a-space>
+                    <a-button @click="$router.push('/schedule')">定时任务</a-button>
                     <a-button @click="$router.push('/voice')">语音命令</a-button>
                     <a-button @click="loadDevices" :loading="loading">刷新</a-button>
                 </a-space>
@@ -407,7 +421,10 @@ const ControlPage = {
                 </div>
                  <!-- 当前播放 -->
                 <div v-if="currentFileName" class="current-playing-label">
-                    <span>当前播放：</span><span class="playing-icon">♪</span> {{ currentFileName }}
+                    <span>当前播放：</span>
+                    <span v-if="playSource === 'schedule'" class="play-source schedule">☑ 定时任务</span>
+                    <span v-else-if="playSource === 'page'" class="play-source page">♪ 本页播放</span>
+                    <span class="playing-icon">♪</span> {{ currentFileName }}
                 </div>
             </div>
 
@@ -559,6 +576,9 @@ const ControlPage = {
             manualPause: false,
             prevPlayStatus: 0,
             autoPlaying: false,
+            frontendControlled: false, // true = 前端接管切歌，后端不切
+            backendAutoPlay: false,    // true = 后端正在自动切歌
+            backendCurrentFile: null,  // 后端推送的当前播放文件路径
             playStartTime: 0,
             pendingNewSong: false,
             sseSource: null,
@@ -576,16 +596,34 @@ const ControlPage = {
     },
     computed: {
         currentFileName() {
+            if (this.backendAutoPlay && !this.frontendControlled && this.backendCurrentFile) {
+                const name = this.backendCurrentFile.includes('/')
+                    ? this.backendCurrentFile.substring(this.backendCurrentFile.lastIndexOf('/') + 1)
+                    : this.backendCurrentFile;
+                return name;
+            }
             if (!this.selectedFile) return '';
             const parts = this.selectedFile.replace(/\\/g, '/').split('/');
             return parts[parts.length - 1];
+        },
+        playSource() {
+            if (this.frontendControlled) return 'page';
+            if (this.backendAutoPlay) return 'schedule';
+            return '';
         },
     },
     methods: {
         getDeviceId() {
             return this.deviceId || this.did;
         },
+        async takeControl() {
+            if (!this.frontendControlled) {
+                this.frontendControlled = true;
+                await api.music.disableAutoPlay().catch(() => {});
+            }
+        },
         async handlePause() {
+            await this.takeControl();
             this.manualPause = true;
             this.clearSongEndTimer();
             this.musicLoading = true;
@@ -596,6 +634,7 @@ const ControlPage = {
             finally { this.musicLoading = false; }
         },
         async handleResume() {
+            await this.takeControl();
             this.manualPause = false;
             this.progressActive = true;
             this.musicLoading = true;
@@ -606,6 +645,7 @@ const ControlPage = {
             finally { this.musicLoading = false; }
         },
         async handleNext() {
+            await this.takeControl();
             const idx = this.fileList.findIndex(f => f.path === this.selectedFile);
             if (idx < 0 || this.fileList.length === 0) {
                 this.$message.warning('请先选择音频文件');
@@ -617,6 +657,7 @@ const ControlPage = {
             await this.playFile(nextFile);
         },
         async handlePrev() {
+            await this.takeControl();
             const idx = this.fileList.findIndex(f => f.path === this.selectedFile);
             if (idx < 0 || this.fileList.length === 0) {
                 this.$message.warning('请先选择音频文件');
@@ -628,6 +669,7 @@ const ControlPage = {
             await this.playFile(prevFile);
         },
         async playFile(file, direct = false) {
+            await this.takeControl();
             this.musicLoading = true;
             this.manualPause = false;
             this.clearSongEndTimer();
@@ -659,6 +701,7 @@ const ControlPage = {
             finally { this.musicLoading = false; }
         },
         async handleVolumeChange(val) {
+            await this.takeControl();
             this.volumeLockUntil = Date.now() + 3000;
             try {
                 const res = await api.music.volume(this.getDeviceId(), val);
@@ -679,6 +722,8 @@ const ControlPage = {
                     const raw = JSON.parse(event.data);
                     const data = raw.playerStatus || raw;
                     data._timestamp = raw.timestamp;
+                    data._autoPlay = raw.autoPlay || false;
+                    data._currentUrlPath = raw.currentUrlPath || null;
                     this.handleSSEStatus(data);
                 } catch (e) { /* ignore parse errors */ }
             });
@@ -700,10 +745,28 @@ const ControlPage = {
             const newStatus = data.status || 0;
             const newPlayTime = data.playTime || 0;
             const newDuration = data.duration || 0;
+            const backendAutoPlay = data._autoPlay || false;
+            const backendCurrentFile = data._currentUrlPath || null;
 
             if (now > this.volumeLockUntil) {
                 this.volume = data.volume || 0;
             }
+
+            // 后端接管切歌：更新显示，跳过前端切歌逻辑
+            this.backendAutoPlay = backendAutoPlay;
+            this.backendCurrentFile = backendCurrentFile;
+            if (backendAutoPlay && !this.frontendControlled) {
+                if (backendCurrentFile && this.fileList.length > 0) {
+                    const matched = this.fileList.find(f => f.urlPath === backendCurrentFile);
+                    if (matched) this.selectedFile = matched.path;
+                }
+                this.displayPlayTime = newPlayTime;
+                this.displayDuration = newDuration;
+                this.syncProgressPercent();
+                this.resetCountdown();
+                return;
+            }
+
             this.syncCurrentPlaying();
 
             // 启动防自动播放：未主动播放时仅更新显示，跳过所有检测
@@ -953,6 +1016,7 @@ const ControlPage = {
             }
         },
         async handleSetPlayMode(mode) {
+            await this.takeControl();
             try {
                 const res = await api.music.mode(this.getDeviceId(), mode);
                 if (res.success) {
@@ -1051,6 +1115,341 @@ const ControlPage = {
         this.stopSSE();
         this.stopCountdown();
         this.stopProgressTimer();
+    },
+};
+
+// === 定时任务页组件 ===
+const SchedulePage = {
+    template: `
+    <div class="app-layout">
+        <header class="app-header">
+            <div class="app-header-title">
+                <span class="logo-dot"></span>
+                小米音箱控制台
+            </div>
+            <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+        </header>
+        <main class="app-content">
+            <div class="control-header">
+                <h2>定时任务</h2>
+                <a-button type="primary" @click="openAddModal">+ 添加任务</a-button>
+            </div>
+
+            <a-table :dataSource="tasks" :columns="taskColumns" :pagination="false" size="small" rowKey="id">
+                <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'enabled'">
+                        <a-switch :checked="record.enabled" @change="(v) => handleToggle(record, v)" size="small" />
+                    </template>
+                    <template v-if="column.key === 'cronExpr'">
+                        <code style="background:#f5f5f5; padding:2px 6px; border-radius:4px;">{{ record.cronExpr }}</code>
+                    </template>
+                    <template v-if="column.key === 'command'">
+                        {{ commandSummary(record) }}
+                    </template>
+                    <template v-if="column.key === 'action'">
+                        <a-space>
+                            <a-button type="link" size="small" @click="openEditModal(record)">编辑</a-button>
+                            <a-popconfirm title="确定删除？" @confirm="handleDelete(record.id)">
+                                <a-button type="link" danger size="small">删除</a-button>
+                            </a-popconfirm>
+                        </a-space>
+                    </template>
+                </template>
+            </a-table>
+
+            <!-- 执行日志 -->
+            <div style="margin-top:32px;">
+                <div class="control-section-title">
+                    执行日志
+                    <a-button type="link" size="small" @click="loadLogs">刷新</a-button>
+                    <a-popconfirm title="清理7天前的日志？" @confirm="clearLogs">
+                        <a-button type="link" danger size="small">清理</a-button>
+                    </a-popconfirm>
+                </div>
+                <a-table :dataSource="logs" :columns="logColumns" :pagination="{ pageSize: 15 }" size="small" rowKey="id">
+                    <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'success'">
+                            <a-tag :color="record.success ? 'green' : 'red'">{{ record.success ? '成功' : '失败' }}</a-tag>
+                        </template>
+                        <template v-if="column.key === 'time'">
+                            {{ new Date(record.createdAt).toLocaleString() }}
+                        </template>
+                    </template>
+                </a-table>
+            </div>
+
+            <!-- 添加/编辑弹窗 -->
+            <a-modal v-model:open="modalVisible" :title="editingTask ? '编辑任务' : '添加任务'" @ok="handleSubmit" okText="保存" width="640px">
+                <a-form layout="vertical">
+                    <a-form-item label="任务名称" required>
+                        <a-input v-model:value="form.taskName" placeholder="如：每晚定时播放" />
+                    </a-form-item>
+                    <a-form-item label="选择设备" required>
+                        <a-select v-model:value="form.deviceId" placeholder="选择设备" style="width:100%" :options="deviceOptions" />
+                    </a-form-item>
+                    <a-form-item label="执行命令" required>
+                        <div v-for="(cmd, idx) in form.commands" :key="idx" style="margin-bottom:12px; padding:12px; background:#fafafa; border-radius:8px;">
+                            <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                                <span style="color:#999; width:24px;">{{ idx + 1 }}.</span>
+                                <a-select v-model:value="cmd.cmd" placeholder="选择命令" style="flex:1;">
+                                    <a-select-option v-for="(label, key) in commandMap" :key="key" :value="key">{{ label }}</a-select-option>
+                                </a-select>
+                                <a-button v-if="form.commands.length > 1" type="text" danger @click="removeCommand(idx)" size="small">✕</a-button>
+                            </div>
+                            <div v-if="cmd.cmd === 'set_volume'" style="padding-left:32px;">
+                                <a-select v-model:value="cmd.params.volume" style="width:120px;">
+                                    <a-select-option v-for="v in volumeOptions" :key="v" :value="v">{{ v }}</a-select-option>
+                                </a-select>
+                            </div>
+                            <div v-if="cmd.cmd === 'set_play_mode'" style="padding-left:32px;">
+                                <a-select v-model:value="cmd.params.mode" style="width:200px;">
+                                    <a-select-option v-for="(label, key) in playModes" :key="key" :value="Number(key)">{{ label }}</a-select-option>
+                                </a-select>
+                            </div>
+                            <div v-if="cmd.cmd === 'tts'" style="padding-left:32px;">
+                                <a-input v-model:value="cmd.params.text" placeholder="播报文本" />
+                            </div>
+                            <div v-if="cmd.cmd === 'send_command'" style="padding-left:32px; display:flex; gap:8px;">
+                                <a-input v-model:value="cmd.params.text" placeholder="命令文本" style="flex:1;" />
+                                <a-input v-model:value="cmd.params.did" placeholder="设备DID" style="width:180px;" />
+                            </div>
+                        </div>
+                        <a-button type="dashed" @click="addCommand" style="width:100%;">+ 添加命令</a-button>
+                    </a-form-item>
+                    <a-form-item label="Cron 表达式（秒 分 时 日 月 周）" required>
+                        <a-input v-model:value="form.cronExpr" placeholder="如：0 0 8 * * ?">
+                            <template #addonAfter>
+                                <a-popover trigger="click" placement="topRight">
+                                    <template #content>
+                                        <div style="width:320px;">
+                                            <div v-for="p in cronPresets" :key="p.expr" style="padding:4px 0;">
+                                                <a-button type="link" size="small" @click="form.cronExpr = p.expr">{{ p.label }}</a-button>
+                                                <code style="margin-left:8px; color:#999;">{{ p.expr }}</code>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template #title>常用表达式</template>
+                                    <a-button type="link" size="small">常用</a-button>
+                                </a-popover>
+                            </template>
+                        </a-input>
+                        <div v-if="cronDesc" style="margin-top:4px; color:#999; font-size:12px;">{{ cronDesc }}</div>
+                    </a-form-item>
+                    <a-form-item label="启用">
+                        <a-switch v-model:checked="form.enabled" />
+                    </a-form-item>
+                </a-form>
+            </a-modal>
+        </main>
+    </div>
+    `,
+    data() {
+        return {
+            tasks: [],
+            logs: [],
+            devices: [],
+            commandMap: {},
+            playModes: {},
+            modalVisible: false,
+            editingTask: null,
+            form: { taskName: '', deviceId: undefined, cronExpr: '', commands: [{ cmd: undefined, params: {} }], enabled: true },
+            volumeOptions: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
+            cronPresets: [
+                { label: '每5分钟', expr: '0 0/5 * * * ?' },
+                { label: '每30分钟', expr: '0 0/30 * * * ?' },
+                { label: '每小时', expr: '0 0 * * * ?' },
+                { label: '每天 08:00', expr: '0 0 8 * * ?' },
+                { label: '每天 12:00', expr: '0 0 12 * * ?' },
+                { label: '每天 18:00', expr: '0 0 18 * * ?' },
+                { label: '每天 22:00', expr: '0 0 22 * * ?' },
+                { label: '工作日 09:00', expr: '0 0 9 * * MON-FRI' },
+                { label: '工作日 18:00', expr: '0 0 18 * * MON-FRI' },
+                { label: '每周一 08:00', expr: '0 0 8 * * MON' },
+                { label: '每月1号 08:00', expr: '0 0 8 1 * ?' },
+            ],
+            taskColumns: [
+                { title: '任务名称', dataIndex: 'taskName', key: 'taskName' },
+                { title: 'Cron', key: 'cronExpr' },
+                { title: '命令', key: 'command' },
+                { title: '启用', key: 'enabled', width: 80 },
+                { title: '操作', key: 'action', width: 140 },
+            ],
+            logColumns: [
+                { title: '时间', key: 'time', width: 170 },
+                { title: '任务', dataIndex: 'taskName', key: 'taskName' },
+                { title: '命令', dataIndex: 'command', key: 'command' },
+                { title: '结果', key: 'success', width: 80 },
+                { title: '消息', dataIndex: 'message', key: 'message', ellipsis: true },
+            ],
+        };
+    },
+    computed: {
+        deviceOptions() {
+            return this.devices.map(d => ({ value: d.deviceId, label: d.name + ' (' + d.model + ')' }));
+        },
+        cronDesc() {
+            const expr = this.form.cronExpr?.trim();
+            if (!expr) return '';
+            const parts = expr.split(/\s+/);
+            if (parts.length !== 6) return '';
+            const [sec, min, hour, day, month, week] = parts;
+            let desc = '';
+            if (week !== '?') desc += week + ' ';
+            if (day !== '*') desc += '每月' + day + '号 ';
+            if (hour !== '*') desc += hour + '时';
+            if (min !== '*' && !min.includes('/')) desc += min + '分';
+            if (min.includes('/')) desc += '每' + min.split('/')[1] + '分钟';
+            if (hour === '*' && min === '*' && sec === '0') desc = '每分钟';
+            return desc ? '→ ' + desc : '';
+        },
+    },
+    async mounted() {
+        await this.loadDevices();
+        this.loadCommands();
+        this.loadPlayModes();
+        this.loadTasks();
+        this.loadLogs();
+    },
+    methods: {
+        async loadDevices() {
+            try {
+                const res = await api.devices.list();
+                if (res.success) this.devices = res.data || [];
+            } catch (e) {}
+        },
+        async loadCommands() {
+            try {
+                const res = await api.schedule.commands();
+                if (res.success) this.commandMap = res.data || {};
+            } catch (e) {}
+        },
+        async loadPlayModes() {
+            try {
+                const res = await api.schedule.playModes();
+                if (res.success) this.playModes = res.data || {};
+            } catch (e) {}
+        },
+        async loadTasks() {
+            try {
+                const res = await api.schedule.tasks();
+                if (res.success) this.tasks = res.data || [];
+            } catch (e) {}
+        },
+        async loadLogs() {
+            try {
+                const res = await api.schedule.logs();
+                if (res.success) this.logs = res.data || [];
+            } catch (e) {}
+        },
+        async clearLogs() {
+            await api.schedule.clearLogs();
+            this.loadLogs();
+        },
+        commandSummary(record) {
+            try {
+                const cmds = JSON.parse(record.command);
+                if (Array.isArray(cmds)) {
+                    return cmds.map(c => this.commandMap[c.cmd] || c.cmd).join(' → ');
+                }
+            } catch (e) {}
+            return this.commandMap[record.command] || record.command;
+        },
+        addCommand() {
+            this.form.commands.push({ cmd: undefined, params: {} });
+        },
+        removeCommand(idx) {
+            this.form.commands.splice(idx, 1);
+        },
+        openAddModal() {
+            this.editingTask = null;
+            this.form = { taskName: '', deviceId: this.devices[0]?.deviceId, cronExpr: '', commands: [{ cmd: undefined, params: {} }], enabled: true };
+            this.modalVisible = true;
+        },
+        openEditModal(record) {
+            this.editingTask = record;
+            let commands = [];
+            try {
+                const parsed = JSON.parse(record.command);
+                if (Array.isArray(parsed)) {
+                    commands = parsed;
+                } else {
+                    commands = [{ cmd: record.command }];
+                }
+            } catch (e) {
+                commands = [{ cmd: record.command }];
+            }
+            commands = commands.map(c => ({
+                cmd: c.cmd,
+                params: {
+                    volume: c.params?.volume || 20,
+                    mode: c.params?.mode != null ? c.params.mode : 2,
+                    text: c.params?.text || '',
+                    did: c.params?.did || '',
+                },
+            }));
+            this.form = {
+                taskName: record.taskName,
+                deviceId: record.deviceId,
+                cronExpr: record.cronExpr,
+                commands: commands,
+                enabled: record.enabled,
+            };
+            this.modalVisible = true;
+        },
+        async handleSubmit() {
+            if (!this.form.taskName || !this.form.cronExpr || !this.form.deviceId) {
+                this.$message.warning('请填写完整信息');
+                return;
+            }
+            const cronRes = await api.schedule.validateCron(this.form.cronExpr);
+            if (!cronRes.success) {
+                this.$message.error(cronRes.message || 'Cron表达式无效');
+                return;
+            }
+            const validCmds = this.form.commands.filter(c => c.cmd);
+            if (validCmds.length === 0) {
+                this.$message.warning('请至少添加一个命令');
+                return;
+            }
+            const commands = validCmds.map(c => {
+                const entry = { cmd: c.cmd };
+                if (c.cmd === 'tts') entry.params = { text: c.params.text || '定时播报' };
+                else if (c.cmd === 'send_command') entry.params = { text: c.params.text, did: c.params.did };
+                else if (c.cmd === 'set_volume') entry.params = { volume: c.params.volume };
+                else if (c.cmd === 'set_play_mode') entry.params = { mode: c.params.mode };
+                return entry;
+            });
+            const data = {
+                taskName: this.form.taskName,
+                deviceId: this.form.deviceId,
+                cronExpr: this.form.cronExpr,
+                commands: commands,
+                enabled: this.form.enabled,
+            };
+            try {
+                if (this.editingTask) {
+                    var res = await api.schedule.updateTask(this.editingTask.id, data);
+                } else {
+                    var res = await api.schedule.addTask(data);
+                }
+                if (!res.success) {
+                    this.$message.error(res.message || '保存失败');
+                    return;
+                }
+                this.modalVisible = false;
+                this.loadTasks();
+            } catch (e) {
+                this.$message.error('保存失败: ' + (e.message || '未知错误'));
+            }
+        },
+        async handleToggle(record, val) {
+            await api.schedule.updateTask(record.id, { enabled: val });
+            this.loadTasks();
+        },
+        async handleDelete(id) {
+            await api.schedule.deleteTask(id);
+            this.loadTasks();
+        },
     },
 };
 
@@ -1290,6 +1689,7 @@ const routes = [
     { path: '/devices', component: DevicesPage },
     { path: '/control', component: ControlPage },
     { path: '/voice', component: VoiceCommandPage },
+    { path: '/schedule', component: SchedulePage },
 ];
 
 const router = VueRouter.createRouter({

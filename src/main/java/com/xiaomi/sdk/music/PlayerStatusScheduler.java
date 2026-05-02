@@ -23,6 +23,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.xiaomi.sdk.mapper.FolderConfigMapper;
+import com.xiaomi.sdk.mapper.PlayStateMapper;
+
 /**
  * 播放状态定时轮询调度器 + SSE 广播
  * @author awen
@@ -34,6 +37,7 @@ public class PlayerStatusScheduler {
     private final MiNAService minaService;
     private final MiAccountService accountService;
     private final ObjectMapper objectMapper;
+    private final AutoPlayManager autoPlayManager;
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private volatile ScheduledFuture<?> task;
@@ -46,10 +50,12 @@ public class PlayerStatusScheduler {
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public PlayerStatusScheduler(MiNAService minaService, MiAccountService accountService, ObjectMapper objectMapper) {
+    public PlayerStatusScheduler(MiNAService minaService, MiAccountService accountService,
+                                 ObjectMapper objectMapper, AutoPlayManager autoPlayManager) {
         this.minaService = minaService;
         this.accountService = accountService;
         this.objectMapper = objectMapper;
+        this.autoPlayManager = autoPlayManager;
     }
 
     public synchronized void start(String deviceId, int intervalSeconds) {
@@ -97,12 +103,20 @@ public class PlayerStatusScheduler {
         return intervalSeconds;
     }
 
+    public AutoPlayManager getAutoPlayManager() {
+        return autoPlayManager;
+    }
+
     // ---- SSE ----
 
     private Map<String, Object> ssePayload() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("timestamp", System.currentTimeMillis());
         payload.put("playerStatus", cachedStatus);
+        if (autoPlayManager != null) {
+            payload.put("autoPlay", autoPlayManager.isEnabled());
+            payload.put("currentUrlPath", autoPlayManager.getCurrentUrlPath());
+        }
         return payload;
     }
 
@@ -173,15 +187,20 @@ public class PlayerStatusScheduler {
                     JsonNode detail = info.path("play_song_detail");
                     long playTime = detail.path("position").asLong(0) / 1000;
                     long duration = detail.path("duration").asLong(0) / 1000;
+                    PlayerStatus prevStatus = cachedStatus;
                     cachedStatus = new PlayerStatus(
                             info.path("status").asInt(0),
                             info.path("volume").asInt(0),
                             info.path("media_type").asText(""),
-                            info.path("play_song_detail").path("audio_id").asText(""),
+                            detail.path("audio_id").asText(""),
                             playTime,
                             duration,
                             info.path("loop_type").asInt(0)
                     );
+                    // 自动切歌检测
+                    if (autoPlayManager != null && autoPlayManager.isEnabled()) {
+                        autoPlayManager.checkAndNext(prevStatus, cachedStatus);
+                    }
                     adjustInterval();
                     broadcastStatus();
                 }

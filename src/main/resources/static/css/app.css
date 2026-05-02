@@ -381,6 +381,24 @@ body {
     color: #FF6900;
 }
 
+.play-source {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.play-source.schedule {
+    background: #fff7e6;
+    color: #d48806;
+    border: 1px solid #ffe58f;
+}
+.play-source.page {
+    background: #f6ffed;
+    color: #52c41a;
+    border: 1px solid #b7eb8f;
+}
+
 .progress-row {
     display: flex;
     align-items: center;

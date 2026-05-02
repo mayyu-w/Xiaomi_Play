@@ -1,12 +1,18 @@
 package com.xiaomi.sdk.auto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.xiaomi.sdk.account.MiAccountService;
 import com.xiaomi.sdk.account.QrCodeLoginService;
 import com.xiaomi.sdk.config.XiaomiSdkProperties;
 import com.xiaomi.sdk.crypto.CryptoService;
 import com.xiaomi.sdk.http.OkHttpClientFactory;
 import com.xiaomi.sdk.mapper.AccountMapper;
+import com.xiaomi.sdk.mapper.FolderConfigMapper;
+import com.xiaomi.sdk.music.AutoPlayManager;
+import com.xiaomi.sdk.mapper.PlayStateMapper;
+import com.xiaomi.sdk.mapper.ScheduledTaskLogMapper;
+import com.xiaomi.sdk.mapper.ScheduledTaskMapper;
 import com.xiaomi.sdk.mapper.TokenHistoryMapper;
 import com.xiaomi.sdk.mapper.VoiceCommandLogMapper;
 import com.xiaomi.sdk.mapper.VoiceCommandMapper;
@@ -14,6 +20,7 @@ import com.xiaomi.sdk.mina.MiNAService;
 import com.xiaomi.sdk.miot.MiIOService;
 import com.xiaomi.sdk.music.MusicService;
 import com.xiaomi.sdk.music.PlayerStatusScheduler;
+import com.xiaomi.sdk.schedule.CronTaskManager;
 import com.xiaomi.sdk.token.TokenManager;
 import com.xiaomi.sdk.token.TokenRefreshScheduler;
 import com.xiaomi.sdk.voicecommand.ConversationPoller;
@@ -64,7 +71,7 @@ public class XiaomiSdkAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ObjectMapper xiaomiObjectMapper() {
-        return new ObjectMapper();
+        return new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
     @Bean
@@ -129,10 +136,19 @@ public class XiaomiSdkAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public AutoPlayManager autoPlayManager(MiNAService minaService,
+                                            PlayStateMapper playStateMapper,
+                                            FolderConfigMapper folderConfigMapper) {
+        return new AutoPlayManager(minaService, playStateMapper, folderConfigMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public PlayerStatusScheduler playerStatusScheduler(MiNAService minaService,
                                                         MiAccountService accountService,
-                                                        ObjectMapper objectMapper) {
-        return new PlayerStatusScheduler(minaService, accountService, objectMapper);
+                                                        ObjectMapper objectMapper,
+                                                        AutoPlayManager autoPlayManager) {
+        return new PlayerStatusScheduler(minaService, accountService, objectMapper, autoPlayManager);
     }
 
     @Bean
@@ -165,5 +181,18 @@ public class XiaomiSdkAutoConfiguration {
     public VoiceCommandService voiceCommandService(MiIOService miioService,
                                                      ConversationPoller poller) {
         return new VoiceCommandService(miioService, poller);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CronTaskManager cronTaskManager(ScheduledTaskMapper taskMapper,
+                                            ScheduledTaskLogMapper logMapper,
+                                            PlayStateMapper playStateMapper,
+                                            FolderConfigMapper folderConfigMapper,
+                                            MiNAService minaService,
+                                            MiIOService miioService,
+                                            MusicService musicService,
+                                            PlayerStatusScheduler statusScheduler) {
+        return new CronTaskManager(taskMapper, logMapper, playStateMapper, folderConfigMapper, minaService, miioService, musicService, statusScheduler);
     }
 }

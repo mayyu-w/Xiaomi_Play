@@ -281,7 +281,7 @@ public class MiNAService {
 
             try (Response response = httpClient.newCall(request).execute()) {
                 String respBody = response.body() != null ? response.body().string() : "";
-//                log.info("ubus {} response: status={}, body={}", method, response.code(), respBody);
+                log.info("ubus {} response: status={}, body={}", method, response.code(), respBody);
                 if (response.code() == 401) {
                     throw new XiaomiAuthException("AUTH_005", "MiNA session 已过期，请重新登录");
                 }

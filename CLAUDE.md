@@ -58,6 +58,12 @@ mvn clean package -DskipTests
 | `CryptoService` | RC4/MD5/SHA1/HMAC-SHA1 加密工具 | Java Crypto API |
 | `TokenManager` | Token 缓存(Redis) + 持久化(PostgreSQL) + 刷新检测 | Spring Data Redis + MyBatis-Flex |
 | `TokenRefreshScheduler` | 定时刷新调度（启动检测 + 每小时续期） | Spring Scheduling |
+| `PlayerStatusScheduler` | 播放状态定时轮询 + SSE 广播 + 动态轮询间隔 | ScheduledExecutorService + SseEmitter |
+| `AutoPlayManager` | 后端自动切歌（5种模式），主动检测歌曲结尾 + 5秒冷却防重复触发 | MiNAService + PlayStateMapper |
+| `CronTaskManager` | 动态 Cron 定时任务管理，支持多命令串行执行 | ThreadPoolTaskScheduler + CronTrigger |
+| `ConversationPoller` | 对话记录轮询，拉取小爱音箱语音输入 | MiNA Conversation API + SseEmitter |
+| `VoiceCommandHandler` | 语音命令匹配与路由（完全匹配→模糊匹配→参数提取） | MusicService + MiNAService + MiIOService |
+| `VoiceCommandService` | 发送文本命令到音箱 + 轮询生命周期管理 | MiIOService + ConversationPoller |
 
 ### 异常体系（exception 包）
 
@@ -82,13 +88,20 @@ mvn clean package -DskipTests
 
 ## Database
 
-三张表：`xm_account`（账号+Token）、`xm_device`（设备）、`xm_token_history`（审计）。
+数据库迁移：Flyway 管理，脚本位于 `src/main/resources/db/migration/`（V1~V11）。
 
-`xm_account` 关键列：`user_id`、`pass_token`、`ssecurity`、`service_token`、`service_token_expire`、`io_service_token`、`io_service_token_expire`。
-
-Token 安全：passToken/ssecurity/serviceToken/ioServiceToken 使用 AES-256-GCM 加密存储，密钥通过环境变量注入。
-
-数据库迁移：Flyway 管理，脚本位于 `src/main/resources/db/migration/`。
+| 表 | 迁移 | 用途 |
+|----|------|------|
+| `xm_account` | V1 | 账号+Token。关键列：`user_id`、`pass_token`、`ssecurity`、`service_token`、`service_token_expire`、`io_service_token`、`io_service_token_expire`。Token 安全：passToken/ssecurity/serviceToken/ioServiceToken 使用 AES-256-GCM 加密存储 |
+| `xm_device` | V1 | 设备列表 |
+| `xm_token_history` | V1 | Token 审计日志 |
+| `xm_folder_config` | V3, V4, V6 | 文件夹配置（SMB 路径、服务器 URL、播放模式） |
+| `xm_play_history` | V5 | 播放历史 |
+| `xm_play_state` | V7 | 当前播放状态（folder_path、file_name、url_path、file_path），单记录（id=1） |
+| `xm_voice_command` | V8 | 语音命令关键词配置 |
+| `xm_voice_command_log` | V9 | 语音命令执行日志 |
+| `xm_scheduled_task` | V10, V11 | 定时任务（cron_expr、command（JSON 多命令数组）、params、enabled） |
+| `xm_scheduled_task_log` | V10 | 定时任务执行日志 |
 
 ## API Endpoints
 
@@ -103,7 +116,11 @@ Token 安全：passToken/ssecurity/serviceToken/ioServiceToken 使用 AES-256-GC
 
 - 认证：`/api/auth/login`（密码）、`/api/auth/qrcode`（二维码）、`/api/auth/qrcode/status`（轮询）、`/api/auth/logout`
 - 设备：`/api/devices`
-- 音乐：`/api/music/play`、`pause`、`next`、`prev`、`volume`、`status`
+- 音乐：`/api/music/play`、`pause`、`next`、`prev`、`volume`、`resume`、`mode`、`status`、`status/stream`（SSE）
+- 音乐扩展：`/api/music/autoplay/disable`、`/api/music/status/interval`
+- 文件夹：`/api/folder/list`、`/api/folder/audio/*`、`/api/folder/config`
+- 定时任务：`/api/schedule/commands`、`/api/schedule/play-modes`、`/api/schedule/cron/validate`、`/api/schedule/tasks`（CRUD）、`/api/schedule/logs`
+- 语音命令：`/api/voice/send`、`/api/voice/polling/start`、`/api/voice/polling/stop`、`/api/voice/polling/status`、`/api/voice/stream`（SSE）、`/api/voice/keywords`（CRUD）、`/api/voice/config`
 - TTS：`/api/tts`
 
 ### 前端
@@ -136,6 +153,46 @@ Vue 3 + Ant Design Vue（CDN 引入），SPA 单体架构。静态资源在 `src
 
 **关键代码路径**：`MiNAService.textToSpeech()` → 设备型号查 `TTS_COMMAND` → `MiIOService.executeAction()` → `miioRequest()` → `CryptoService.signData(uri, json, xiaomiioSsecurity)` + `FormBody` + Cookie 含配对的 `ioServiceToken`。
 
+### URL 编码：Java URLEncoder 的 + vs %20
+
+`java.net.URLEncoder.encode()` 把空格编码为 `+`，但 MiNA `play_by_music_url` 的 URL 路径中 `+` 不会被还原为空格，必须用 `%20`。所有 `buildAudioUrl()` 方法在编码后都要 `.replace("+", "%20")`。影响：`CronTaskManager`、`AutoPlayManager`。
+
+### MyBatis-Flex createdAt/updatedAt 不自动填充
+
+MyBatis-Flex 的 `@Column(onInsertValue=...)` 注解不会自动填充 `OffsetDateTime` 类型的列（需要自行设置）。所有 Entity 的 insert/update 操作必须显式 `setCreatedAt(OffsetDateTime.now())` / `setUpdatedAt(OffsetDateTime.now())`。
+
+### playByMusicUrl REPLACE_ALL 重置设备播放模式
+
+MiNA `play_by_music_url` 的 `REPLACE_ALL` 模式会重置设备播放模式为默认值。在 `CronTaskManager` 和 `AutoPlayManager` 中，调用 play 后必须重新通过 `minaService.playerSetLoop()` 设置播放模式。
+
 ## Development Phases
 
-1. CryptoService（加密工具）→ 2. MiAccountService（登录）→ 3. TokenManager（缓存+持久化）→ 4. MiIOService（MIoT）→ 5. MiNAService（TTS）→ 6. MusicService（音乐）→ 7. Spring Boot Starter 自动装配 → 8. 集成测试 → 9. Web 控制台（Vue 3 + Ant Design Vue）→ 10. 二维码扫码登录 → 11. Token 定时自动刷新
+1. CryptoService（加密工具）→ 2. MiAccountService（登录）→ 3. TokenManager（缓存+持久化）→ 4. MiIOService（MIoT）→ 5. MiNAService（TTS）→ 6. MusicService（音乐）→ 7. Spring Boot Starter 自动装配 → 8. 集成测试 → 9. Web 控制台（Vue 3 + Ant Design Vue）→ 10. 二维码扫码登录 → 11. Token 定时自动刷新 → 12. 定时任务（多命令串行 + Cron 调度）→ 13. 后端自动切歌（前后端共存模型）→ 14. 语音命令（对话轮询 + 命令匹配）
+
+## 核心机制
+
+### 定时任务多命令串行执行
+
+`CronTaskManager.executeTask()` 解析 `command` 字段为 JSON 数组，每个元素是 `{"cmd":"...", "params":{...}}`，命令间间隔 1.5s 顺序执行。向后兼容单字符串格式。
+
+支持的命令：play_next、play_prev、stop、pause、resume、set_volume、set_play_mode、play_last、tts、send_command。
+
+`play_last` 恢复上次播放后，`playByMusicUrl` 的 REPLACE_ALL 会重置设备播放模式，因此自动重新设置播放模式（任务指定的优先，否则取 `xm_folder_config.play_mode`），并启用 `AutoPlayManager`。
+
+### 前后端共存切歌模型
+
+- **后端控制**（默认）：`AutoPlayManager` 通过 `PlayerStatusScheduler` 轮询检测歌曲结尾，自动播放下一首。主动检测 `playTime >= duration` 时提前切歌，避免设备自动循环后再切。5 秒冷却防重复触发。
+- **前端接管**：用户点击任何播放控制按钮时调用 `takeControl()` → 禁用 AutoPlayManager → 前端 `songEndTimer` 接管切歌。
+- **SSE 推送**：`PlayerStatusScheduler.ssePayload()` 包含 `autoPlay`（boolean）和 `currentUrlPath`（string），前端据此判断控制权归属并显示播放来源标签。
+
+### AutoPlayManager 播放模式
+
+| 模式值 | 名称 | 行为 |
+|--------|------|------|
+| 0 | 单曲循环 | 重复当前歌曲 |
+| 1 | 全部循环 | 下一首（末尾回到第一首） |
+| 2 | 当前随机 | 文件夹内随机（不重复上一首） |
+| 3 | 单曲播放 | 播完停止 |
+| 4 | 顺序播放 | 按序播放，末首播完停止 |
+
+仅扫描当前文件夹（`xm_play_state.folder_path`），按文件名排序与前端一致。

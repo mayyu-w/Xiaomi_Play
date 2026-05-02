@@ -5,6 +5,7 @@ import com.xiaomi.sdk.exception.XiaomiAuthException;
 import com.xiaomi.sdk.mapper.FolderConfigMapper;
 import com.xiaomi.sdk.model.MusicResult;
 import com.xiaomi.sdk.model.PlayerStatus;
+import com.xiaomi.sdk.music.AutoPlayManager;
 import com.xiaomi.sdk.music.MusicService;
 import com.xiaomi.sdk.music.PlayerStatusScheduler;
 import org.slf4j.Logger;
@@ -155,6 +156,15 @@ public class MusicController {
     public SseEmitter statusStream(@RequestParam String deviceId) {
         statusScheduler.start(deviceId, statusScheduler.getIntervalSeconds());
         return statusScheduler.createEmitter();
+    }
+
+    @PostMapping("/autoplay/disable")
+    public ResponseEntity<Map<String, Object>> disableAutoPlay() {
+        AutoPlayManager autoPlay = statusScheduler.getAutoPlayManager();
+        if (autoPlay != null) {
+            autoPlay.disable();
+        }
+        return ResponseEntity.ok(Map.of("success", true, "data", "", "message", "ok"));
     }
 
     @PostMapping("/status/interval")

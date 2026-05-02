@@ -1,7 +1,10 @@
 package com.xiaomi.sdk.controller;
 
+import com.mybatisflex.core.query.QueryWrapper;
 import com.xiaomi.sdk.entity.VoiceCommandEntity;
+import com.xiaomi.sdk.entity.VoiceConfigEntity;
 import com.xiaomi.sdk.mapper.VoiceCommandMapper;
+import com.xiaomi.sdk.mapper.VoiceConfigMapper;
 import com.xiaomi.sdk.model.VoiceCommandResult;
 import com.xiaomi.sdk.voicecommand.ConversationPoller;
 import com.xiaomi.sdk.voicecommand.VoiceCommandHandler;
@@ -27,15 +30,18 @@ public class VoiceCommandController {
     private final VoiceCommandService voiceCommandService;
     private final ConversationPoller poller;
     private final VoiceCommandMapper commandMapper;
+    private final VoiceConfigMapper configMapper;
     private final VoiceCommandHandler handler;
 
     public VoiceCommandController(VoiceCommandService voiceCommandService,
                                    ConversationPoller poller,
                                    VoiceCommandMapper commandMapper,
+                                   VoiceConfigMapper configMapper,
                                    VoiceCommandHandler handler) {
         this.voiceCommandService = voiceCommandService;
         this.poller = poller;
         this.commandMapper = commandMapper;
+        this.configMapper = configMapper;
         this.handler = handler;
     }
 
@@ -56,12 +62,16 @@ public class VoiceCommandController {
         String deviceId = (String) body.get("deviceId");
         int interval = body.get("interval") != null ? ((Number) body.get("interval")).intValue() : 1;
         voiceCommandService.startPolling(deviceId, interval);
+        saveConfig("polling_enabled", "true");
+        saveConfig("polling_device_id", deviceId);
+        saveConfig("polling_interval", String.valueOf(interval));
         return ResponseEntity.ok(Map.of("success", true, "data", "", "message", "轮询已启动"));
     }
 
     @PostMapping("/polling/stop")
     public ResponseEntity<Map<String, Object>> stopPolling() {
         voiceCommandService.stopPolling();
+        saveConfig("polling_enabled", "false");
         return ResponseEntity.ok(Map.of("success", true, "data", "", "message", "轮询已停止"));
     }
 
@@ -83,6 +93,16 @@ public class VoiceCommandController {
             emitter.completeWithError(e);
             return emitter;
         }
+    }
+
+    @GetMapping("/config")
+    public ResponseEntity<Map<String, Object>> getConfig() {
+        List<VoiceConfigEntity> configs = configMapper.selectAll();
+        Map<String, String> data = new LinkedHashMap<>();
+        for (VoiceConfigEntity c : configs) {
+            data.put(c.getConfigKey(), c.getConfigValue());
+        }
+        return ResponseEntity.ok(Map.of("success", true, "data", data, "message", ""));
     }
 
     @GetMapping("/keywords")
@@ -126,5 +146,24 @@ public class VoiceCommandController {
         commandMapper.deleteById(id);
         handler.refreshCustomKeywords();
         return ResponseEntity.ok(Map.of("success", true, "data", "", "message", "关键词已删除"));
+    }
+
+    private void saveConfig(String key, String value) {
+        try {
+            VoiceConfigEntity existing = configMapper.selectOneByQuery(
+                    QueryWrapper.create().where("config_key = '" + key + "'"));
+            if (existing != null) {
+                existing.setConfigValue(value);
+                existing.setUpdatedAt(OffsetDateTime.now());
+                configMapper.update(existing);
+            } else {
+                VoiceConfigEntity entity = new VoiceConfigEntity();
+                entity.setConfigKey(key);
+                entity.setConfigValue(value);
+                configMapper.insert(entity);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
     }
 }
