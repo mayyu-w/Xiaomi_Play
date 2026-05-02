@@ -44,6 +44,17 @@ const api = {
         recordHistory: (data) => api.post('/api/folder/history', data),
         history: () => api.get('/api/folder/history'),
     },
+    voice: {
+        send: (did, text, speak = false) => api.post('/api/voice/send', { did, text, speak }),
+        startPolling: (deviceId, interval = 1) => api.post('/api/voice/polling/start', { deviceId, interval }),
+        stopPolling: () => api.post('/api/voice/polling/stop'),
+        pollingStatus: () => api.get('/api/voice/polling/status'),
+        streamUrl: () => '/api/voice/stream',
+        keywords: () => api.get('/api/voice/keywords'),
+        addKeyword: (keyword, command) => api.post('/api/voice/keywords', { keyword, command, enabled: true, sortOrder: 0 }),
+        updateKeyword: (id, keyword, command, enabled) => api.put('/api/voice/keywords/' + id, { keyword, command, enabled }),
+        deleteKeyword: (id) => api.request('/api/voice/keywords/' + id, { method: 'DELETE' }),
+    },
 };
 
 // === 登录页组件 ===
@@ -255,7 +266,10 @@ const DevicesPage = {
         <main class="app-content">
             <div class="devices-header">
                 <h2>我的设备</h2>
-                <a-button @click="loadDevices" :loading="loading">刷新</a-button>
+                <a-space>
+                    <a-button @click="$router.push('/voice')">语音命令</a-button>
+                    <a-button @click="loadDevices" :loading="loading">刷新</a-button>
+                </a-space>
             </div>
 
             <a-spin :spinning="loading">
@@ -1040,12 +1054,242 @@ const ControlPage = {
     },
 };
 
+// === 语音命令页组件 ===
+const VoiceCommandPage = {
+    template: `
+    <div class="app-layout">
+        <header class="app-header">
+            <div class="app-header-title">
+                <span class="logo-dot"></span>
+                小米音箱控制台
+            </div>
+            <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+        </header>
+        <main class="app-content">
+            <div class="control-header">
+                <h2>语音命令</h2>
+            </div>
+            <!-- 轮询控制 -->
+            <div class="control-section">
+                <div class="control-section-title">对话监听</div>
+                <a-row :gutter="16" align="middle">
+                    <a-col :span="8">
+                        <a-select v-model:value="pollDeviceId" placeholder="选择设备" style="width:100%" :options="deviceOptions" />
+                    </a-col>
+                    <a-col :span="4">
+                        <a-select v-model:value="pollInterval" style="width:100%">
+                            <a-select-option :value="1">1秒</a-select-option>
+                            <a-select-option :value="2">2秒</a-select-option>
+                            <a-select-option :value="3">3秒</a-select-option>
+                            <a-select-option :value="5">5秒</a-select-option>
+                        </a-select>
+                    </a-col>
+                    <a-col :span="6">
+                        <a-switch v-model:checked="polling" @change="togglePolling" />
+                        <span style="margin-left:8px">{{ polling ? '监听中' : '已停止' }}</span>
+                    </a-col>
+                </a-row>
+
+                <!-- 实时对话流 -->
+                <div v-if="polling" style="margin-top:16px; max-height:300px; overflow-y:auto; background:#fafafa; border-radius:8px; padding:12px;">
+                    <div v-for="evt in voiceEvents" :key="evt.timestamp" style="padding:6px 0; border-bottom:1px solid #f0f0f0;">
+                        <a-tag :color="evt.handled ? 'green' : 'orange'" style="margin-right:8px;">{{ evt.matchedCommand || '未匹配' }}</a-tag>
+                        <span style="color:#666; font-size:12px;">{{ formatTime(evt.timestamp) }}</span>
+                        <span style="margin-left:8px;">{{ evt.query }}</span>
+                    </div>
+                    <div v-if="voiceEvents.length === 0" style="color:#999; text-align:center; padding:20px;">
+                        等待语音输入...
+                    </div>
+                </div>
+            </div>
+
+            <!-- 发送文本命令 -->
+            <div class="control-section">
+                <div class="control-section-title">发送文本命令</div>
+                <a-row :gutter="16" align="middle">
+                    <a-col :span="14">
+                        <a-input v-model:value="sendText" placeholder="输入文本命令（等同于对音箱说话）" @pressEnter="handleSend" />
+                    </a-col>
+                    <a-col :span="4">
+                        <a-checkbox v-model:checked="sendSpeak">语音回应</a-checkbox>
+                    </a-col>
+                    <a-col :span="4">
+                        <a-button type="primary" @click="handleSend" :loading="sendLoading">发送</a-button>
+                    </a-col>
+                </a-row>
+            </div>
+
+            <!-- 关键词配置 -->
+            <div class="control-section">
+                <div class="control-section-title">
+                    关键词配置
+                    <a-button type="link" size="small" @click="showAddKeyword = true">+ 添加</a-button>
+                </div>
+                <a-table :dataSource="allKeywords" :columns="keywordColumns" :pagination="false" size="small" rowKey="id">
+                    <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'enabled'">
+                            <a-switch v-if="!record.builtin" :checked="record.enabled" @change="(v) => handleKeywordToggle(record, v)" size="small" />
+                            <span v-else style="color:#999;">内置</span>
+                        </template>
+                        <template v-if="column.key === 'action'">
+                            <template v-if="!record.builtin">
+                                <a-popconfirm title="确定删除？" @confirm="handleDeleteKeyword(record.id)">
+                                    <a-button type="link" danger size="small">删除</a-button>
+                                </a-popconfirm>
+                            </template>
+                        </template>
+                    </template>
+                </a-table>
+
+                <a-modal v-model:open="showAddKeyword" title="添加关键词" @ok="handleAddKeyword" okText="添加">
+                    <a-form layout="vertical">
+                        <a-form-item label="关键词">
+                            <a-input v-model:value="newKeyword" placeholder="如：播放歌曲" />
+                        </a-form-item>
+                        <a-form-item label="命令动作">
+                            <a-input v-model:value="newCommand" placeholder="如：play_next 或 exec#自定义文本" />
+                        </a-form-item>
+                    </a-form>
+                </a-modal>
+            </div>
+        </main>
+    </div>
+    `,
+    data() {
+        return {
+            devices: [],
+            pollDeviceId: undefined,
+            pollInterval: 1,
+            polling: false,
+            voiceEvents: [],
+            eventSource: null,
+            sendText: '',
+            sendSpeak: false,
+            sendLoading: false,
+            builtinKeywords: {},
+            customKeywords: [],
+            showAddKeyword: false,
+            newKeyword: '',
+            newCommand: '',
+            keywordColumns: [
+                { title: '关键词', dataIndex: 'keyword', key: 'keyword' },
+                { title: '命令', dataIndex: 'command', key: 'command' },
+                { title: '类型', key: 'type', customRender: ({ record }) => record.id ? '自定义' : '内置' },
+                { title: '启用', key: 'enabled' },
+                { title: '操作', key: 'action' },
+            ],
+        };
+    },
+    computed: {
+        deviceOptions() {
+            return this.devices.map(d => ({ value: d.deviceId, label: d.name + ' (' + d.model + ')' }));
+        },
+        allKeywords() {
+            const builtin = Object.entries(this.builtinKeywords).map(([k, v]) => ({ keyword: k, command: v, enabled: true, builtin: true }));
+            return [...this.customKeywords, ...builtin];
+        },
+    },
+    async mounted() {
+        await this.loadDevices();
+        this.loadKeywords();
+        this.loadPollingStatus();
+    },
+    beforeUnmount() {
+        this.closeEventSource();
+    },
+    methods: {
+        async loadDevices() {
+            try {
+                const res = await api.devices.list();
+                if (res.success) this.devices = res.data || [];
+            } catch (e) {}
+        },
+        async loadPollingStatus() {
+            try {
+                const res = await api.voice.pollingStatus();
+                if (res.success && res.data.enabled) {
+                    this.polling = true;
+                    this.pollDeviceId = res.data.deviceId;
+                    this.pollInterval = res.data.interval || 1;
+                    this.connectEventSource();
+                }
+            } catch (e) {}
+        },
+        async togglePolling(val) {
+            if (val) {
+                if (!this.pollDeviceId) { this.polling = false; return; }
+                await api.voice.startPolling(this.pollDeviceId, this.pollInterval);
+                this.voiceEvents = [];
+                this.connectEventSource();
+            } else {
+                await api.voice.stopPolling();
+                this.closeEventSource();
+            }
+        },
+        connectEventSource() {
+            this.closeEventSource();
+            this.eventSource = new EventSource(api.voice.streamUrl());
+            this.eventSource.addEventListener('conversation', (e) => {
+                const data = JSON.parse(e.data);
+                this.voiceEvents.unshift(data);
+                if (this.voiceEvents.length > 100) this.voiceEvents.pop();
+            });
+        },
+        closeEventSource() {
+            if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+        },
+        async handleSend() {
+            if (!this.sendText.trim()) return;
+            const device = this.devices.find(d => d.deviceId === this.pollDeviceId || d.deviceId === this.devices[0]?.deviceId);
+            if (!device) return;
+            this.sendLoading = true;
+            try {
+                await api.voice.send(device.did, this.sendText, this.sendSpeak);
+                this.sendText = '';
+            } finally {
+                this.sendLoading = false;
+            }
+        },
+        async loadKeywords() {
+            try {
+                const res = await api.voice.keywords();
+                if (res.success) {
+                    this.builtinKeywords = res.data.builtin || {};
+                    this.customKeywords = res.data.custom || [];
+                }
+            } catch (e) {}
+        },
+        async handleAddKeyword() {
+            if (!this.newKeyword || !this.newCommand) return;
+            await api.voice.addKeyword(this.newKeyword, this.newCommand);
+            this.showAddKeyword = false;
+            this.newKeyword = '';
+            this.newCommand = '';
+            this.loadKeywords();
+        },
+        async handleKeywordToggle(record, val) {
+            if (record.id) {
+                await api.voice.updateKeyword(record.id, record.keyword, record.command, val);
+                this.loadKeywords();
+            }
+        },
+        async handleDeleteKeyword(id) {
+            await api.voice.deleteKeyword(id);
+            this.loadKeywords();
+        },
+        formatTime(ts) {
+            return new Date(ts).toLocaleTimeString();
+        },
+    },
+};
+
 // === 路由 ===
 const routes = [
     { path: '/', redirect: '/login' },
     { path: '/login', component: LoginPage },
     { path: '/devices', component: DevicesPage },
     { path: '/control', component: ControlPage },
+    { path: '/voice', component: VoiceCommandPage },
 ];
 
 const router = VueRouter.createRouter({

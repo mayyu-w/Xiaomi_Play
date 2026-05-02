@@ -42,7 +42,8 @@ class MiAccountServiceTest {
                 ),
                 new XiaomiSdkProperties.Crypto(),
                 new XiaomiSdkProperties.Http(),
-                new XiaomiSdkProperties.Folder()
+                new XiaomiSdkProperties.Folder(),
+                new XiaomiSdkProperties.Voice()
         );
 
         OkHttpClientFactory factory = new OkHttpClientFactory();

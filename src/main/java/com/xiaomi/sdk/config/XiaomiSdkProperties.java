@@ -12,10 +12,11 @@ public record XiaomiSdkProperties(
     Api api,
     Crypto crypto,
     Http http,
-    Folder folder) {
+    Folder folder,
+    Voice voice) {
 
     public XiaomiSdkProperties() {
-        this(true, new Api(), new Crypto(), new Http(), new Folder());
+        this(true, new Api(), new Crypto(), new Http(), new Folder(), new Voice());
     }
 
     public record Api(
@@ -61,6 +62,15 @@ public record XiaomiSdkProperties(
     ) {
         public Folder() {
             this(null, false, 300, "", 3);
+        }
+    }
+
+    public record Voice(
+        int pollInterval,
+        int historyRetentionDays
+    ) {
+        public Voice() {
+            this(1, 7);
         }
     }
 }

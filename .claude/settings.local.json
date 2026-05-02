@@ -61,7 +61,10 @@
       "Bash(tasklist)",
       "Bash(taskkill *)",
       "Bash(printenv)",
-      "Bash(git commit -m 'feat: SSE推送 + 动态轮询间隔 + 快速切歌 + 单记录状态表 *)"
+      "Bash(git commit -m 'feat: SSE推送 + 动态轮询间隔 + 快速切歌 + 单记录状态表 *)",
+      "Bash(git commit -m 'feat: 定时器切歌 + Token自动续期 + 动态轮询间隔 *)",
+      "Bash(git push *)",
+      "Bash(gh search *)"
     ]
   }
 }

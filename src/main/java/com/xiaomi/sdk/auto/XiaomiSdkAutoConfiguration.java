@@ -8,12 +8,17 @@ import com.xiaomi.sdk.crypto.CryptoService;
 import com.xiaomi.sdk.http.OkHttpClientFactory;
 import com.xiaomi.sdk.mapper.AccountMapper;
 import com.xiaomi.sdk.mapper.TokenHistoryMapper;
+import com.xiaomi.sdk.mapper.VoiceCommandLogMapper;
+import com.xiaomi.sdk.mapper.VoiceCommandMapper;
 import com.xiaomi.sdk.mina.MiNAService;
 import com.xiaomi.sdk.miot.MiIOService;
 import com.xiaomi.sdk.music.MusicService;
 import com.xiaomi.sdk.music.PlayerStatusScheduler;
 import com.xiaomi.sdk.token.TokenManager;
 import com.xiaomi.sdk.token.TokenRefreshScheduler;
+import com.xiaomi.sdk.voicecommand.ConversationPoller;
+import com.xiaomi.sdk.voicecommand.VoiceCommandHandler;
+import com.xiaomi.sdk.voicecommand.VoiceCommandService;
 import okhttp3.OkHttpClient;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -135,5 +140,30 @@ public class XiaomiSdkAutoConfiguration {
     public TokenRefreshScheduler tokenRefreshScheduler(MiAccountService accountService,
                                                         TokenManager tokenManager) {
         return new TokenRefreshScheduler(accountService, tokenManager);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public VoiceCommandHandler voiceCommandHandler(MiNAService minaService,
+                                                    PlayerStatusScheduler statusScheduler,
+                                                    VoiceCommandMapper commandMapper,
+                                                    VoiceCommandLogMapper logMapper) {
+        return new VoiceCommandHandler(minaService, statusScheduler, commandMapper, logMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ConversationPoller conversationPoller(MiAccountService accountService,
+                                                   ObjectMapper objectMapper,
+                                                   OkHttpClient httpClient,
+                                                   VoiceCommandHandler commandHandler) {
+        return new ConversationPoller(accountService, objectMapper, httpClient, commandHandler);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public VoiceCommandService voiceCommandService(MiIOService miioService,
+                                                     ConversationPoller poller) {
+        return new VoiceCommandService(miioService, poller);
     }
 }

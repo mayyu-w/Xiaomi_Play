@@ -25,6 +25,11 @@ xiaomi:
     ignore-dirs: ${FOLDER_IGNORE_DIRS:tmp,cache}
     # 目录扫描深度
     max-depth: ${FOLDER_MAX_DEPTH:10}
+  voice:
+    # 对话轮询间隔（秒）
+    poll-interval: ${VOICE_POLL_INTERVAL:1}
+    # 命令日志保留天数
+    history-retention-days: ${VOICE_HISTORY_RETENTION:7}
 
 spring:
   datasource:

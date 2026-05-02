@@ -6,7 +6,9 @@ import com.xiaomi.sdk.exception.XiaomiTokenExpiredException;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.IOException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -64,15 +66,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AsyncRequestNotUsableException.class)
     public void handleAsyncNotUsable(AsyncRequestNotUsableException e, HttpServletResponse response) {
-        // 设备切歌/停止时主动断开音频流连接，属正常行为
         log.debug("音频流连接已断开: {}", e.getMessage());
+    }
+
+    @ExceptionHandler(IOException.class)
+    public void handleIOException(IOException e) {
+        log.debug("连接已断开: {}", e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleUnknown(Exception e) {
         log.error("未处理异常", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                "success", false, "data", "", "message", "服务异常，请稍后重试"
-        ));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("success", false, "data", "", "message", "服务异常，请稍后重试"));
     }
 }

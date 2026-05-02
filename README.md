@@ -8,10 +8,10 @@
 ![OkHttp](https://img.shields.io/badge/OkHttp-5.3-009688?logo=google&logoColor=white)
 ![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)
 ![Ant Design Vue](https://img.shields.io/badge/Ant%20Design%20Vue-4-0170FE?logo=antdesign&logoColor=white)
-![License](https://img.shields.io/github/license/mayyu-w/Xiaomi_Play?logo=github)
-![GitHub Repo Stars](https://img.shields.io/github/stars/mayyu-w/Xiaomi_Play?style=social)
+![License](https://img.shields.io/badge/license-MIT-blue?logo=github)
 
-小米音箱控制 Java Springboot版
+
+### 小米音箱控制 Java Springboot版
 
 ## 功能
 
