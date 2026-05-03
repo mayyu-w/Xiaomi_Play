@@ -203,6 +203,16 @@ public class MiAccountService {
     public List<Device> getDeviceList() {
         ensureLoggedIn();
         try {
+            return doGetDeviceList();
+        } catch (XiaomiAuthException e) {
+            log.info("设备列表请求 401，刷新 Token 重试");
+            refreshToken();
+            return doGetDeviceList();
+        }
+    }
+
+    private List<Device> doGetDeviceList() {
+        try {
             String requestId = "app_ios_" + crypto.getRandomString(30);
             String url = properties.api().naUrl2()
                     + "/admin/v2/device_list?master=0&requestId=" + requestId;
@@ -507,6 +517,9 @@ public class MiAccountService {
     }
 
     private JsonNode parseResponse(Response response) throws IOException {
+        if (response.code() == 401) {
+            throw new XiaomiAuthException("AUTH_005", "MiNA session 已过期");
+        }
         String body = response.body() != null ? response.body().string() : "";
         try {
             JsonNode json = objectMapper.readTree(body);

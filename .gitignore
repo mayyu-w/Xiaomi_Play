@@ -35,3 +35,4 @@ Thumbs.db
 # Build
 build/
 out/
+.playwright-mcp/

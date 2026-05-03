@@ -131,6 +131,19 @@ public class MiIOService {
     private JsonNode miioRequest(String uri, Object data) {
         ensureLoggedIn();
         try {
+            return doMiioRequest(uri, data);
+        } catch (XiaomiApiException e) {
+            if (e.getHttpStatus() == 401) {
+                log.info("MIoT 请求 401，刷新 Token 重试: uri={}", uri);
+                accountService.refreshToken();
+                return doMiioRequest(uri, data);
+            }
+            throw e;
+        }
+    }
+
+    private JsonNode doMiioRequest(String uri, Object data) {
+        try {
             String jsonData = objectMapper.writeValueAsString(data);
             String ssecurity = accountService.getSsecurityForMiot();
             Map<String, String> signedData = crypto.signData(uri, jsonData, ssecurity);

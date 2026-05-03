@@ -42,8 +42,9 @@ mvn clean package -DskipTests
 
 | 机制 | 触发时机 | 阈值 | 说明 |
 |------|----------|------|------|
-| 主动刷新 | 启动 30s 后首次检测，每小时定时 | 过期前 24h | `TokenRefreshScheduler` + `@Scheduled` |
+| 主动刷新 | 启动 30s 后首次检测，每 30 分钟定时 | 过期前 13h | `TokenRefreshScheduler` + `@Scheduled` |
 | 被动刷新 | API 调用 `getCurrentToken()` | 过期前 5min | `TokenManager.isExpiringSoon()` |
+| 401 自动重试 | MiNA/MIoT/设备列表请求返回 401 | 即时 | 捕获 `XiaomiAuthException` → `refreshToken()` → 重试一次 |
 | 过期告警 | 启动首次检测 | 已过期 | 日志 WARN 提示前往首页重新登录 |
 
 ### 模块划分（com.xiaomi.sdk）
@@ -67,9 +68,9 @@ mvn clean package -DskipTests
 
 ### 异常体系（exception 包）
 
-- `XiaomiAuthException` — 认证异常（密码错误/二次验证）
+- `XiaomiApiException` — API 调用异常（含 httpStatus + errorCode），所有业务异常的基类
+- `XiaomiAuthException extends XiaomiApiException` — 认证异常（httpStatus 固定 401），代表 session 过期/密码错误/未登录等
 - `XiaomiTokenExpiredException` — Token 过期
-- `XiaomiApiException` — API 调用异常（429/500）
 
 ## Tech Stack
 
@@ -164,6 +165,20 @@ MyBatis-Flex 的 `@Column(onInsertValue=...)` 注解不会自动填充 `OffsetDa
 ### playByMusicUrl REPLACE_ALL 重置设备播放模式
 
 MiNA `play_by_music_url` 的 `REPLACE_ALL` 模式会重置设备播放模式为默认值。在 `CronTaskManager` 和 `AutoPlayManager` 中，调用 play 后必须重新通过 `minaService.playerSetLoop()` 设置播放模式。
+
+### 401 异常被吞导致 Token 刷新失效
+
+**现象**：MiNA API 返回 401（HTML 错误页面），但 `PlayerStatusScheduler.handleTokenExpired()` 从未触发，定时轮询持续报错直到手动重启。
+
+**根因**：`XiaomiAuthException` 原本独立于 `XiaomiApiException`（二者都是 `RuntimeException` 子类）。在 `MiNAService.ubusRequest()` 的 catch 链中，`catch(Exception)` 将 `XiaomiAuthException` 包裹成 `XiaomiApiException(500)`，丢失了 401 信息。上层 `pollStatus()` 的 `catch(XiaomiApiException)` 检查 `httpStatus == 401` 永远匹配不上。
+
+**修复（三件事缺一不可）**：
+
+1. **异常继承修正**：`XiaomiAuthException extends XiaomiApiException`（httpStatus 固定 401），确保所有 `catch(XiaomiApiException)` 都能捕获认证异常。
+2. **401 自动重试**：`MiNAService.ubusRequest()`、`MiIOService.miioRequest()`、`MiAccountService.getDeviceList()` 均拆分为外层重试 + 内层实际请求，捕获 `XiaomiAuthException` 后调用 `refreshToken()` 再重试一次。
+3. **parseResponse 前置 401 检查**：`MiAccountService.parseResponse()` 先检查 HTTP 状态码，401 直接抛 `XiaomiAuthException`，避免把 HTML 错误页面当 JSON 解析崩溃。
+
+**注意**：`refreshToken()` 通过 passToken cookie 调用 `serviceLogin`，仅在 passToken 未过期时有效。若 passToken 也过期，刷新失败，异常正常上抛，`PlayerStatusScheduler` 暂停轮询并提示用户重新登录。
 
 ## Development Phases
 

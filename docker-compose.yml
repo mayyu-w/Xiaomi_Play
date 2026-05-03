@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-xiaomi_play}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    # volumes 格式: 宿主机路径:容器内路径
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data    # PG数据文件: 宿主机 ./data/postgres → 容器 /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    # volumes 格式: 宿主机路径:容器内路径
+    volumes:
+      - ./data/redis:/data                         # Redis数据文件: 宿主机 ./data/redis → 容器 /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    # ports 格式: 宿主机端口:容器内端口
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      XIAOMI_AES_KEY: ${XIAOMI_AES_KEY:-}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-xiaomi_play}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MUSIC_PATH: /music
+      LOG_PATH: /app/logs
+    # volumes 格式: 宿主机路径:容器内路径
+    volumes:
+      - ./logs:/app/logs                           # 应用日志: 宿主机 ./logs → 容器 /app/logs
+      - ${MUSIC_DIR:-./music}:/music:ro            # 音乐文件: 宿主机 ${MUSIC_DIR} → 容器 /music (只读)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
