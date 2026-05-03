@@ -42,14 +42,12 @@ public class CronTaskManager {
     public static final Map<String, String> COMMAND_LIST = Map.ofEntries(
             Map.entry("play_next", "下一首"),
             Map.entry("play_prev", "上一首"),
-            Map.entry("stop", "停止播放"),
             Map.entry("pause", "暂停"),
             Map.entry("resume", "继续播放"),
             Map.entry("set_volume", "设置音量"),
             Map.entry("set_play_mode", "设置播放模式"),
             Map.entry("play_last", "恢复上次播放"),
-            Map.entry("tts", "TTS语音播报"),
-            Map.entry("send_command", "发送文本命令")
+            Map.entry("tts", "TTS语音播报")
     );
 
     public static final Map<Integer, String> PLAY_MODE_MAP = Map.of(
@@ -166,6 +164,8 @@ public class CronTaskManager {
                 if (autoPlay != null) {
                     autoPlay.enable(task.getDeviceId(), mode);
                 }
+                // 启动播放状态轮询（前端未连接 SSE 时也需要轮询以检测歌曲结尾）
+                statusScheduler.start(task.getDeviceId(), statusScheduler.getIntervalSeconds());
             }
         } catch (Exception e) {
             success = false;
@@ -209,7 +209,8 @@ public class CronTaskManager {
         StringBuilder sb = new StringBuilder();
         for (Map<String, Object> cmd : commands) {
             if (sb.length() > 0) sb.append(" → ");
-            sb.append(cmd.get("cmd"));
+            String cmdName = (String) cmd.get("cmd");
+            sb.append(COMMAND_LIST.getOrDefault(cmdName, cmdName));
         }
         return sb.toString();
     }
@@ -218,7 +219,6 @@ public class CronTaskManager {
         switch (command) {
             case "play_next" -> musicService.next(deviceId);
             case "play_prev" -> musicService.prev(deviceId);
-            case "stop" -> minaService.playerStop(deviceId);
             case "pause" -> minaService.playerPause(deviceId);
             case "resume" -> minaService.playerPlay(deviceId);
             case "set_volume" -> {

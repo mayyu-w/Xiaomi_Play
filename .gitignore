@@ -36,3 +36,4 @@ Thumbs.db
 build/
 out/
 .playwright-mcp/
+.claude/

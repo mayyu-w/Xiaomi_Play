@@ -1,6 +1,7 @@
 package com.xiaomi.sdk.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.xiaomi.sdk.entity.ScheduledTaskEntity;
 import com.xiaomi.sdk.entity.ScheduledTaskLogEntity;
@@ -143,15 +144,26 @@ public class ScheduledTaskController {
     @GetMapping("/logs")
     public ResponseEntity<Map<String, Object>> logs(
             @RequestParam(required = false) Long taskId,
-            @RequestParam(defaultValue = "50") int limit,
-            @RequestParam(defaultValue = "0") int offset) {
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "-1") long totalRow) {
         QueryWrapper query = QueryWrapper.create();
         if (taskId != null) {
-            query.where("task_id = " + taskId);
+            query.where("task_id = ?", taskId);
         }
-        query.orderBy("created_at", false).limit(limit).offset(offset);
-        List<ScheduledTaskLogEntity> logs = logMapper.selectListByQuery(query);
-        return ResponseEntity.ok(Map.of("success", true, "data", logs, "message", ""));
+        query.orderBy("created_at", false);
+        Page<ScheduledTaskLogEntity> result = logMapper.paginate(page, size, totalRow, query);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", Map.of(
+                        "list", result.getRecords(),
+                        "total", result.getTotalRow(),
+                        "page", result.getPageNumber(),
+                        "size", result.getPageSize(),
+                        "totalPage", result.getTotalPage()
+                ),
+                "message", ""
+        ));
     }
 
     @DeleteMapping("/logs")

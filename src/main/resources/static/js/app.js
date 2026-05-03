@@ -65,7 +65,7 @@ const api = {
         updateTask: (id, data) => api.put('/api/schedule/tasks/' + id, data),
         deleteTask: (id) => api.request('/api/schedule/tasks/' + id, { method: 'DELETE' }),
         validateCron: (expr) => api.get('/api/schedule/cron/validate?expr=' + encodeURIComponent(expr)),
-        logs: (taskId, limit = 50) => api.get('/api/schedule/logs?limit=' + limit + (taskId ? '&taskId=' + taskId : '')),
+        logs: (taskId, page = 1, size = 10, totalRow = -1) => api.get('/api/schedule/logs?page=' + page + '&size=' + size + '&totalRow=' + totalRow + (taskId ? '&taskId=' + taskId : '')),
         clearLogs: () => api.request('/api/schedule/logs', { method: 'DELETE' }),
     },
 };
@@ -1166,13 +1166,19 @@ const SchedulePage = {
                         <a-button type="link" danger size="small">清理</a-button>
                     </a-popconfirm>
                 </div>
-                <a-table :dataSource="logs" :columns="logColumns" :pagination="{ pageSize: 15 }" size="small" rowKey="id">
+                <a-table :dataSource="logs" :columns="logColumns" :pagination="logPagination" @change="handleLogTableChange" size="small" rowKey="id">
                     <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'success'">
                             <a-tag :color="record.success ? 'green' : 'red'">{{ record.success ? '成功' : '失败' }}</a-tag>
                         </template>
                         <template v-if="column.key === 'time'">
-                            {{ new Date(record.createdAt).toLocaleString() }}
+                            {{ formatDate(record.createdAt) }}
+                        </template>
+                        <template v-if="column.key === 'command'">
+                            {{ translateCommand(record.command) }}
+                        </template>
+                        <template v-if="column.key === 'deviceId'">
+                            {{ getDeviceName(record.deviceId) }}
                         </template>
                     </template>
                 </a-table>
@@ -1258,6 +1264,7 @@ const SchedulePage = {
                 { label: '每5分钟', expr: '0 0/5 * * * ?' },
                 { label: '每30分钟', expr: '0 0/30 * * * ?' },
                 { label: '每小时', expr: '0 0 * * * ?' },
+                { label: '每小时15分', expr: '0 15 * * * ?' },
                 { label: '每天 08:00', expr: '0 0 8 * * ?' },
                 { label: '每天 12:00', expr: '0 0 12 * * ?' },
                 { label: '每天 18:00', expr: '0 0 18 * * ?' },
@@ -1277,10 +1284,19 @@ const SchedulePage = {
             logColumns: [
                 { title: '时间', key: 'time', width: 170 },
                 { title: '任务', dataIndex: 'taskName', key: 'taskName' },
-                { title: '命令', dataIndex: 'command', key: 'command' },
+                { title: '设备', key: 'deviceId', width: 120, ellipsis: true },
+                { title: '命令', key: 'command' },
                 { title: '结果', key: 'success', width: 80 },
                 { title: '消息', dataIndex: 'message', key: 'message', ellipsis: true },
             ],
+            logPagination: {
+                current: 1,
+                pageSize: 10,
+                total: -1,
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '30'],
+                showTotal: (total) => `共 ${total} 条`,
+            },
         };
     },
     computed: {
@@ -1337,13 +1353,37 @@ const SchedulePage = {
         },
         async loadLogs() {
             try {
-                const res = await api.schedule.logs();
-                if (res.success) this.logs = res.data || [];
+                const res = await api.schedule.logs(null, this.logPagination.current, this.logPagination.pageSize, this.logPagination.total);
+                if (res.success && res.data) {
+                    this.logs = res.data.list || [];
+                    this.logPagination.total = res.data.total || 0;
+                }
             } catch (e) {}
         },
         async clearLogs() {
             await api.schedule.clearLogs();
+            this.logPagination.current = 1;
+            this.logPagination.total = -1;
             this.loadLogs();
+        },
+        handleLogTableChange(pagination) {
+            this.logPagination.current = pagination.current;
+            this.logPagination.pageSize = pagination.pageSize;
+            this.loadLogs();
+        },
+        formatDate(createdAt) {
+            if (!createdAt) return '-';
+            if (typeof createdAt === 'number') return new Date(createdAt * 1000).toLocaleString();
+            return new Date(createdAt).toLocaleString();
+        },
+        translateCommand(command) {
+            if (!command) return '-';
+            return command.split(' → ').map(c => this.commandMap[c] || c).join(' → ');
+        },
+        getDeviceName(deviceId) {
+            if (!deviceId) return '-';
+            const device = this.devices.find(d => d.deviceId === deviceId);
+            return device ? device.name : deviceId;
         },
         commandSummary(record) {
             try {
