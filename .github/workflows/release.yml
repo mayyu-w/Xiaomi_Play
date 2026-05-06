@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release body
+        id: body
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges -20)
+          else
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges "${PREV_TAG}..HEAD")
+          fi
+          {
+            echo "commits<<EOF"
+            echo "$COMMITS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Archive source code
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          git archive --format=zip --prefix="Xiaomi_Play-${VERSION}/" -o "Xiaomi_Play-${VERSION}.zip" HEAD
+          git archive --format=tar.gz --prefix="Xiaomi_Play-${VERSION}/" -o "Xiaomi_Play-${VERSION}.tar.gz" HEAD
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ## 更新日志
+
+            ${{ steps.body.outputs.commits }}
+          files: |
+            Xiaomi_Play-${{ github.ref_name }}.zip
+            Xiaomi_Play-${{ github.ref_name }}.tar.gz
