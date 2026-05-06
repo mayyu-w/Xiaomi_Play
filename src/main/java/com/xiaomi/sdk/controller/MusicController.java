@@ -1,5 +1,6 @@
 package com.xiaomi.sdk.controller;
 
+import com.mybatisflex.core.query.QueryWrapper;
 import com.xiaomi.sdk.entity.FolderConfigEntity;
 import com.xiaomi.sdk.exception.XiaomiAuthException;
 import com.xiaomi.sdk.mapper.FolderConfigMapper;
@@ -122,7 +123,7 @@ public class MusicController {
 
     private void savePlayMode(int mode) {
         FolderConfigEntity entity = configMapper.selectListByQuery(
-                com.mybatisflex.core.query.QueryWrapper.create().limit(1)
+                QueryWrapper.create().limit(1)
         ).stream().findFirst().orElse(null);
         if (entity == null) {
             entity = new FolderConfigEntity();

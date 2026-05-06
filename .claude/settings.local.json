@@ -65,7 +65,11 @@
       "Bash(git commit -m 'feat: 定时器切歌 + Token自动续期 + 动态轮询间隔 *)",
       "Bash(git push *)",
       "Bash(gh search *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(python *)",
+      "Bash(docker run *)",
+      "Bash(node -e \"try { new Function\\(require\\('fs'\\).readFileSync\\('src/main/resources/static/js/app.js','utf8'\\)\\); console.log\\('JS syntax OK'\\) } catch\\(e\\) { console.error\\(e.message\\) }\")",
+      "Bash(node -e ' *)"
     ]
   }
 }

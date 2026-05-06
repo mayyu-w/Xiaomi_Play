@@ -80,7 +80,6 @@ mvn clean package -DskipTests
 | Spring Boot | 3.5.14 | 框架 |
 | Maven | 3.9.x | 构建 |
 | OkHttp | 5.3.2 | HTTP/2 连接复用 |
-| sa-token | 1.45.0 | 内部 Token 安全管理 |
 | jjwt | 0.13.0 | JWT Token 序列化 |
 | MyBatis-Flex | 1.11.6 | ORM |
 | PostgreSQL | 17.x | Token 持久化 |
@@ -198,6 +197,7 @@ MiNA `play_by_music_url` 的 `REPLACE_ALL` 模式会重置设备播放模式为�
 
 - **后端控制**（默认）：`AutoPlayManager` 通过 `PlayerStatusScheduler` 轮询检测歌曲结尾，自动播放下一首。主动检测 `playTime >= duration` 时提前切歌，避免设备自动循环后再切。5 秒冷却防重复触发。
 - **前端接管**：用户点击任何播放控制按钮时调用 `takeControl()` → 禁用 AutoPlayManager → 前端 `songEndTimer` 接管切歌。
+- **前端断开恢复**：当所有 SSE 连接断开（用户关闭浏览器）时，`PlayerStatusScheduler.onEmitterRemoved()` 检测到无前端连接，自动调用 `AutoPlayManager.reEnable()` 恢复后端切歌。避免前端关闭后无人切歌的问题。`reEnable()` 只恢复 `enabled` 标记，不改变 deviceId/playMode/folderFiles 等已有状态。若用户暂停后关闭页面，`checkAndNext()` 检测到 status≠1 不会触发切歌。
 - **SSE 推送**：`PlayerStatusScheduler.ssePayload()` 包含 `autoPlay`（boolean）和 `currentUrlPath`（string），前端据此判断控制权归属并显示播放来源标签。
 
 ### AutoPlayManager 播放模式

@@ -1,5 +1,6 @@
 package com.xiaomi.sdk.controller;
 
+import com.mybatisflex.core.query.QueryWrapper;
 import com.xiaomi.sdk.config.XiaomiSdkProperties;
 import com.xiaomi.sdk.entity.FolderConfigEntity;
 import com.xiaomi.sdk.entity.PlayStateEntity;
@@ -76,7 +77,7 @@ public class FolderController {
         maxDepth = Math.max(1, Math.min(50, maxDepth));
 
         FolderConfigEntity entity = configMapper.selectListByQuery(
-                com.mybatisflex.core.query.QueryWrapper.create().limit(1)
+                QueryWrapper.create().limit(1)
         ).stream().findFirst().orElse(null);
         boolean isNew = (entity == null);
         if (isNew) {
@@ -288,7 +289,7 @@ public class FolderController {
 
     private Map<String, Object> loadConfig() {
         FolderConfigEntity entity = configMapper.selectListByQuery(
-                com.mybatisflex.core.query.QueryWrapper.create().limit(1)
+                QueryWrapper.create().limit(1)
         ).stream().findFirst().orElse(null);
 
         XiaomiSdkProperties.Folder defaults = properties.folder();

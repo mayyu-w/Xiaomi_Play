@@ -68,7 +68,134 @@ const api = {
         logs: (taskId, page = 1, size = 10, totalRow = -1) => api.get('/api/schedule/logs?page=' + page + '&size=' + size + '&totalRow=' + totalRow + (taskId ? '&taskId=' + taskId : '')),
         clearLogs: () => api.request('/api/schedule/logs', { method: 'DELETE' }),
     },
+    about: {
+        info: () => api.get('/api/about'),
+        checkUpdate: () => api.get('/api/about/check-update'),
+    },
 };
+
+// === 关于弹窗 Mixin ===
+const aboutMixin = {
+    data() {
+        return {
+            showAbout: false,
+            aboutInfo: { version: '...', repository: '' },
+            updateChecking: false,
+            updateResult: null,
+        };
+    },
+    methods: {
+        async openAbout() {
+            this.showAbout = true;
+            this.updateResult = null;
+            try {
+                const res = await api.about.info();
+                if (res.success) this.aboutInfo = res.data;
+            } catch {}
+        },
+        async checkUpdate() {
+            this.updateChecking = true;
+            this.updateResult = null;
+            try {
+                const res = await api.about.checkUpdate();
+                this.updateResult = res;
+            } catch {
+                this.updateResult = { success: false, message: '网络错误，请稍后重试' };
+            } finally {
+                this.updateChecking = false;
+            }
+        },
+    },
+};
+
+const aboutModalTemplate = `
+<a-modal v-model:open="showAbout" title="关于" :footer="null" width="520px" @cancel="showAbout = false">
+    <div class="about-content">
+        <div class="about-header">
+            <div class="about-logo">
+                <svg viewBox="0 0 48 48" width="48" height="48">
+                    <rect width="48" height="48" rx="12" fill="#FF6900"/>
+                    <rect x="10" y="10" width="12" height="28" rx="2" fill="#fff"/>
+                    <rect x="26" y="10" width="12" height="14" rx="2" fill="#fff"/>
+                    <rect x="26" y="28" width="12" height="10" rx="2" fill="#fff"/>
+                </svg>
+            </div>
+            <div class="about-title">小米音箱控制台</div>
+            <div class="about-version">v{{ aboutInfo.version }}</div>
+        </div>
+
+        <a-divider style="margin: 16px 0" />
+
+        <div class="about-section">
+            <div class="about-section-title">更新检查</div>
+            <a-space>
+                <a-button type="primary" size="small" :loading="updateChecking" @click="checkUpdate">检查更新</a-button>
+                <a v-if="aboutInfo.repository" :href="aboutInfo.repository" target="_blank" class="about-github-link">
+                    <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" style="vertical-align:middle"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                </a>
+            </a-space>
+            <div v-if="updateResult" class="about-update-result">
+                <a-alert v-if="updateResult.success && updateResult.data.hasUpdate" type="success" showIcon
+                    :message="'发现新版本 v' + updateResult.data.latestVersion">
+                    <template #description>
+                        <div>发布时间：{{ updateResult.data.publishedAt }}</div>
+                        <div style="margin-top:8px">
+                            <a :href="updateResult.data.releaseUrl" target="_blank">查看发布详情</a>
+                        </div>
+                    </template>
+                </a-alert>
+                <a-alert v-else-if="updateResult.success && !updateResult.data.hasUpdate" type="info" showIcon
+                    message="当前已是最新版本" />
+                <a-alert v-else-if="!updateResult.success" type="warning" showIcon
+                    :message="updateResult.message || '检查失败'" />
+            </div>
+        </div>
+
+        <a-divider style="margin: 16px 0" />
+
+        <div class="about-section">
+            <div class="about-section-title">更新日志</div>
+            <div class="about-changelog" v-if="updateResult && updateResult.success && updateResult.data.releaseNotes">
+                <pre class="about-release-notes">{{ updateResult.data.releaseNotes }}</pre>
+            </div>
+            <div v-else class="about-changelog">
+                <div style="color:var(--text-secondary)">点击「检查更新」查看最新版本日志</div>
+                <div style="margin-top:8px">
+                    <a :href="(aboutInfo.repository || 'https://github.com/mayyu-w/Xiaomi_Play') + '/releases'" target="_blank">
+                        查看所有历史版本
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <a-divider style="margin: 16px 0" />
+
+        <div class="about-section">
+            <div class="about-section-title">开源软件声明</div>
+            <div class="about-oss-desc">本产品使用了以下开源软件，感谢开源社区的贡献。</div>
+            <div class="about-oss-list">
+                <div class="about-oss-item"><span class="oss-name">Java 21</span><span class="oss-sep"> : </span><span class="oss-license">GPL v2 with Classpath Exception</span></div>
+                <div class="about-oss-item"><span class="oss-name">Spring Boot 3.5</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">OkHttp 5.3</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">MyBatis-Flex 1.11</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">Flyway</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">JJWT 0.13</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">PostgreSQL JDBC</span><span class="oss-sep"> : </span><span class="oss-license">BSD 2-Clause</span></div>
+                <div class="about-oss-item"><span class="oss-name">Lettuce (Redis)</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">HikariCP</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">Jackson</span><span class="oss-sep"> : </span><span class="oss-license">Apache License 2.0</span></div>
+                <div class="about-oss-item"><span class="oss-name">Vue.js 3.5</span><span class="oss-sep"> : </span><span class="oss-license">MIT License</span></div>
+                <div class="about-oss-item"><span class="oss-name">Vue Router 4.5</span><span class="oss-sep"> : </span><span class="oss-license">MIT License</span></div>
+                <div class="about-oss-item"><span class="oss-name">Ant Design Vue 4.2</span><span class="oss-sep"> : </span><span class="oss-license">MIT License</span></div>
+                <div class="about-oss-item"><span class="oss-name">dayjs 1.11</span><span class="oss-sep"> : </span><span class="oss-license">MIT License</span></div>
+                <div class="about-oss-item"><span class="oss-name">MiSans</span><span class="oss-sep"> : </span><span class="oss-license">MIUI 字体许可协议</span></div>
+                <div class="about-oss-item"><span class="oss-name">MiService (Yonsm)</span><span class="oss-sep"> : </span><span class="oss-license">MIT License</span></div>
+                <div class="about-oss-item"><span class="oss-name">xiaomusic (hanxi)</span><span class="oss-sep"> : </span><span class="oss-license">MIT License</span></div>
+            </div>
+        </div>
+    </div>
+</a-modal>
+`;
 
 // === 登录页组件 ===
 const LoginPage = {
@@ -273,6 +400,7 @@ const DevicesPage = {
             <a-space>
                 <span class="text-secondary">{{ displayName }}</span>
                 <span class="text-secondary" style="opacity:0.6">ID: {{ userId }}</span>
+                <a-button size="small" @click="openAbout">关于</a-button>
                 <a-button size="small" @click="handleLogout">退出</a-button>
             </a-space>
         </header>
@@ -301,8 +429,10 @@ const DevicesPage = {
                 </div>
             </a-spin>
         </main>
+        ${aboutModalTemplate}
     </div>
     `,
+    mixins: [aboutMixin],
     data() {
         return { devices: [], loading: false, userId: '', displayName: '' };
     },
@@ -370,7 +500,10 @@ const ControlPage = {
                 <span class="logo-dot"></span>
                 小米音箱控制台
             </div>
-            <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+            <a-space>
+                <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+                <a-button size="small" @click="openAbout">关于</a-button>
+            </a-space>
         </header>
         <main class="app-content">
             <div class="control-header">
@@ -525,8 +658,10 @@ const ControlPage = {
             </div>
 
         </main>
+        ${aboutModalTemplate}
     </div>
     `,
+    mixins: [aboutMixin],
     data() {
         const query = new URLSearchParams(window.location.search);
         return {
@@ -1127,7 +1262,10 @@ const SchedulePage = {
                 <span class="logo-dot"></span>
                 小米音箱控制台
             </div>
-            <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+            <a-space>
+                <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+                <a-button size="small" @click="openAbout">关于</a-button>
+            </a-space>
         </header>
         <main class="app-content">
             <div class="control-header">
@@ -1247,8 +1385,10 @@ const SchedulePage = {
                 </a-form>
             </a-modal>
         </main>
+        ${aboutModalTemplate}
     </div>
     `,
+    mixins: [aboutMixin],
     data() {
         return {
             tasks: [],
@@ -1502,7 +1642,10 @@ const VoiceCommandPage = {
                 <span class="logo-dot"></span>
                 小米音箱控制台
             </div>
-            <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+            <a-space>
+                <a-button size="small" @click="$router.push('/devices')">返回设备列表</a-button>
+                <a-button size="small" @click="openAbout">关于</a-button>
+            </a-space>
         </header>
         <main class="app-content">
             <div class="control-header">
@@ -1592,8 +1735,10 @@ const VoiceCommandPage = {
                 </a-modal>
             </div>
         </main>
+        ${aboutModalTemplate}
     </div>
     `,
+    mixins: [aboutMixin],
     data() {
         return {
             devices: [],

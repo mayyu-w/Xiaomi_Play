@@ -123,15 +123,22 @@ public class PlayerStatusScheduler {
     public SseEmitter createEmitter() {
         SseEmitter emitter = new SseEmitter(0L);
         emitters.add(emitter);
-        emitter.onCompletion(() -> emitters.remove(emitter));
-        emitter.onTimeout(() -> emitters.remove(emitter));
-        emitter.onError(e -> emitters.remove(emitter));
+        emitter.onCompletion(() -> onEmitterRemoved(emitter));
+        emitter.onTimeout(() -> onEmitterRemoved(emitter));
+        emitter.onError(e -> onEmitterRemoved(emitter));
         try {
             emitter.send(SseEmitter.event().name("status").data(ssePayload()));
         } catch (IOException e) {
-            emitters.remove(emitter);
+            onEmitterRemoved(emitter);
         }
         return emitter;
+    }
+
+    private void onEmitterRemoved(SseEmitter emitter) {
+        emitters.remove(emitter);
+        if (emitters.isEmpty() && autoPlayManager != null) {
+            autoPlayManager.reEnable(deviceId);
+        }
     }
 
     public void broadcastStatus() {

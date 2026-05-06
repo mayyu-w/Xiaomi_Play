@@ -61,6 +61,27 @@ public class AutoPlayManager {
         log.info("自动切歌已停用");
     }
 
+    public void reEnable(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) return;
+        this.deviceId = deviceId;
+
+        PlayStateEntity state = playStateMapper.selectOneById(1L);
+        if (state != null && state.getUrlPath() != null) {
+            this.currentUrlPath = state.getUrlPath();
+            this.folderFiles = scanFolder();
+        }
+
+        FolderConfigEntity config = folderConfigMapper.selectOneById(1L);
+        if (config != null && config.getPlayMode() != null) {
+            this.playMode = config.getPlayMode();
+        }
+
+        if (this.folderFiles != null && !this.folderFiles.isEmpty()) {
+            this.enabled = true;
+            log.info("前端已断开，后端自动切歌已恢复: deviceId={}, mode={}, currentFile={}", this.deviceId, playMode, currentUrlPath);
+        }
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
