@@ -31,12 +31,6 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Archive source code
-        run: |
-          VERSION="${GITHUB_REF_NAME}"
-          git archive --format=zip --prefix="Xiaomi_Play-${VERSION}/" -o "Xiaomi_Play-${VERSION}.zip" HEAD
-          git archive --format=tar.gz --prefix="Xiaomi_Play-${VERSION}/" -o "Xiaomi_Play-${VERSION}.tar.gz" HEAD
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -46,6 +40,3 @@ jobs:
             ## 更新日志
 
             ${{ steps.body.outputs.commits }}
-          files: |
-            Xiaomi_Play-${{ github.ref_name }}.zip
-            Xiaomi_Play-${{ github.ref_name }}.tar.gz
